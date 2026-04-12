@@ -1,0 +1,67 @@
+/**
+ * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
+ * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ */
+
+import { Platform } from 'react-native';
+
+const tintColorLight = '#1f5ea8';
+const tintColorDark = '#1f5ea8';
+
+export const TravelColors = {
+  primary: '#1f5ea8',
+  primarySoft: '#53a7ea',
+  background: '#f6fbff',
+  surface: '#ffffff',
+  tintSurface: '#edf5fd',
+  border: '#d8e6f5',
+  borderStrong: '#bdd2ea',
+  text: '#15304b',
+  secondaryText: '#46627f',
+  mutedText: '#6c87a2',
+  danger: '#b53c3c',
+} as const;
+
+export const Colors = {
+  light: {
+    text: TravelColors.text,
+    background: TravelColors.background,
+    tint: tintColorLight,
+    icon: '#7f97b2',
+    tabIconDefault: '#7f97b2',
+    tabIconSelected: tintColorLight,
+  },
+  dark: {
+    text: TravelColors.text,
+    background: TravelColors.background,
+    tint: tintColorDark,
+    icon: '#7f97b2',
+    tabIconDefault: '#7f97b2',
+    tabIconSelected: tintColorDark,
+  },
+};
+
+export const Fonts = Platform.select({
+  ios: {
+    /** iOS `UIFontDescriptorSystemDesignDefault` */
+    sans: 'system-ui',
+    /** iOS `UIFontDescriptorSystemDesignSerif` */
+    serif: 'ui-serif',
+    /** iOS `UIFontDescriptorSystemDesignRounded` */
+    rounded: 'ui-rounded',
+    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
+    mono: 'ui-monospace',
+  },
+  default: {
+    sans: 'normal',
+    serif: 'serif',
+    rounded: 'normal',
+    mono: 'monospace',
+  },
+  web: {
+    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    serif: "Georgia, 'Times New Roman', serif",
+    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
+    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  },
+});
