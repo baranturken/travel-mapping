@@ -1,6 +1,5 @@
-import type { CreateTripInput } from '@/features/trips/types';
 import type { CreateTripFormValues } from '@/features/trips/schemas';
-import type { TripStop } from '@/features/trips/types';
+import type { CreateTripInput, TripStop } from '@/features/trips/types';
 
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();

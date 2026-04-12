@@ -6,7 +6,6 @@ import type {
   TransportType,
   TripDetail,
   TripLeg,
-  TripListItem,
   TripStop,
   TripSummary,
 } from '@/features/trips/types';

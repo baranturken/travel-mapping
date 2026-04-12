@@ -8,3 +8,13 @@ dist/
 coverage/
 android/
 ios/
+.github/
+docs/
+mcp-server/
+README.md
+package.json
+package-lock.json
+travel-mapping-draft.png
+app/README.md
+app/.vscode/
+app/scripts/
