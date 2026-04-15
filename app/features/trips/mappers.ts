@@ -1,5 +1,5 @@
 import type { CreateTripFormValues } from '@/features/trips/schemas';
-import type { CreateTripInput, TripStop } from '@/features/trips/types';
+import type { CreateTripInput, TripDetail, TripStop } from '@/features/trips/types';
 
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();
@@ -13,8 +13,21 @@ export function toCreateTripInput(values: CreateTripFormValues): CreateTripInput
       cityName: stop.cityName.trim(),
       countryName: stop.countryName.trim(),
       stayLabel: normalizeOptionalText(stop.stayLabel),
+      accommodationName: normalizeOptionalText(stop.accommodationName),
+      accommodationType: stop.accommodationType || null,
+      accommodationNote: normalizeOptionalText(stop.accommodationNote),
       latitude: Number(stop.latitude),
       longitude: Number(stop.longitude),
+      places: stop.places.map((place) => ({
+        title: place.title.trim(),
+        note: normalizeOptionalText(place.note),
+      })),
+      memories: stop.memories.map((memory) => ({
+        imageUri: memory.imageUri.trim(),
+        caption: normalizeOptionalText(memory.caption),
+        latitude: memory.latitude ?? null,
+        longitude: memory.longitude ?? null,
+      })),
     })),
     legs: values.legs.map((leg) => ({
       transportType: leg.transportType,
@@ -33,4 +46,64 @@ export function formatTripUpdatedAt(value: string) {
     day: 'numeric',
     year: 'numeric',
   }).format(new Date(value));
+}
+
+export function toTripFormValues(trip: TripDetail): CreateTripFormValues {
+  return {
+    title: trip.title,
+    stops: trip.stops.map((stop) => ({
+      cityName: stop.cityName,
+      countryName: stop.countryName,
+      stayLabel: stop.stayLabel ?? '',
+      accommodationName: stop.accommodationName ?? '',
+      accommodationType: stop.accommodationType ?? '',
+      accommodationNote: stop.accommodationNote ?? '',
+      latitude: stop.latitude.toString(),
+      longitude: stop.longitude.toString(),
+      places: stop.places.map((place) => ({
+        title: place.title,
+        note: place.note ?? '',
+      })),
+      memories: stop.memories.map((memory) => ({
+        imageUri: memory.imageUri,
+        caption: memory.caption ?? '',
+        latitude: memory.latitude ?? null,
+        longitude: memory.longitude ?? null,
+      })),
+    })),
+    legs: trip.legs.map((leg) => ({
+      transportType: leg.transportType,
+      transportLabel: leg.transportLabel ?? '',
+    })),
+  };
+}
+
+export function toDuplicatedTripInput(trip: TripDetail): CreateTripInput {
+  return {
+    title: `${trip.title} (copy)`,
+    stops: trip.stops.map((stop) => ({
+      cityName: stop.cityName,
+      countryName: stop.countryName,
+      stayLabel: stop.stayLabel ?? '',
+      accommodationName: stop.accommodationName ?? '',
+      accommodationType: stop.accommodationType ?? null,
+      accommodationNote: stop.accommodationNote ?? '',
+      latitude: stop.latitude,
+      longitude: stop.longitude,
+      places: stop.places.map((place) => ({
+        title: place.title,
+        note: place.note ?? '',
+      })),
+      memories: stop.memories.map((memory) => ({
+        imageUri: memory.imageUri,
+        caption: memory.caption ?? '',
+        latitude: memory.latitude,
+        longitude: memory.longitude,
+      })),
+    })),
+    legs: trip.legs.map((leg) => ({
+      transportType: leg.transportType,
+      transportLabel: leg.transportLabel ?? '',
+    })),
+  };
 }

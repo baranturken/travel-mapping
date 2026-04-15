@@ -15,7 +15,8 @@ export function TripMapWebView({ trip }: TripMapWebViewProps) {
   const [hasLoadError, setHasLoadError] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
   const [showNetworkHint, setShowNetworkHint] = useState(false);
-  const showFallbackState = hasLoadError || (showNetworkHint && !isMapReady);
+  const showFallbackState = hasLoadError;
+  const showSlowLoadNotice = showNetworkHint && !isMapReady && !hasLoadError;
 
   useEffect(() => {
     setHasLoadError(false);
@@ -61,11 +62,14 @@ export function TripMapWebView({ trip }: TripMapWebViewProps) {
 
       <View style={styles.noticeCard}>
         <Text style={styles.noticeTitle}>
-          {showFallbackState ? 'Map fallback active' : 'Map note'}
+          {showFallbackState ? 'Map fallback active' : showSlowLoadNotice ? 'Map still loading' : 'Map note'}
         </Text>
         <Text style={styles.noticeBody}>
-          This MVP map uses Leaflet and OpenStreetMap tiles. If the network is weak, the itinerary
-          summary below remains the reliable local fallback.
+          {showFallbackState
+            ? 'The itinerary summary below remains available even if the online map assets fail to load.'
+            : showSlowLoadNotice
+              ? 'The trip is still trying to load map assets. Keep this screen open for a moment before falling back to the itinerary summary.'
+              : 'This MVP map uses Leaflet and OpenStreetMap tiles. If the network is weak, the itinerary summary below remains the reliable local fallback.'}
         </Text>
       </View>
 

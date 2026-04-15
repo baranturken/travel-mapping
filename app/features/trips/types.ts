@@ -1,6 +1,26 @@
 export const TRANSPORT_TYPES = ['plane', 'bus', 'ferry', 'train', 'car', 'custom'] as const;
+export const ACCOMMODATION_TYPES = ['hotel', 'airbnb', 'hostel', 'guesthouse', 'custom'] as const;
 
 export type TransportType = (typeof TRANSPORT_TYPES)[number];
+export type AccommodationType = (typeof ACCOMMODATION_TYPES)[number];
+
+export type TripPlace = {
+  id: string;
+  stopId: string;
+  orderIndex: number;
+  title: string;
+  note: string | null;
+};
+
+export type TripMemory = {
+  id: string;
+  stopId: string;
+  orderIndex: number;
+  imageUri: string;
+  caption: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
 
 export type TripStop = {
   id: string;
@@ -9,8 +29,13 @@ export type TripStop = {
   cityName: string;
   countryName: string;
   stayLabel: string | null;
+  accommodationName: string | null;
+  accommodationType: AccommodationType | null;
+  accommodationNote: string | null;
   latitude: number;
   longitude: number;
+  places: TripPlace[];
+  memories: TripMemory[];
 };
 
 export type TripLeg = {
@@ -41,12 +66,29 @@ export type TripListItem = TripSummary & {
   lastStopLabel: string;
 };
 
+export type CreateTripPlaceInput = {
+  title: string;
+  note?: string | null;
+};
+
+export type CreateTripMemoryInput = {
+  imageUri: string;
+  caption?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
 export type CreateTripStopInput = {
   cityName: string;
   countryName: string;
   stayLabel?: string | null;
+  accommodationName?: string | null;
+  accommodationType?: AccommodationType | null;
+  accommodationNote?: string | null;
   latitude: number;
   longitude: number;
+  places: CreateTripPlaceInput[];
+  memories: CreateTripMemoryInput[];
 };
 
 export type CreateTripLegInput = {
@@ -76,6 +118,20 @@ export const TRANSPORT_META: Record<
   custom: { label: 'Custom', emoji: '🧭', dashed: false },
 };
 
+export const ACCOMMODATION_META: Record<
+  AccommodationType,
+  {
+    label: string;
+    emoji: string;
+  }
+> = {
+  hotel: { label: 'Hotel', emoji: '🏨' },
+  airbnb: { label: 'Airbnb', emoji: '🏠' },
+  hostel: { label: 'Hostel', emoji: '🛏️' },
+  guesthouse: { label: 'Guesthouse', emoji: '🗝️' },
+  custom: { label: 'Stay', emoji: '📍' },
+};
+
 export function getTransportDisplay(transportType: TransportType, transportLabel?: string | null) {
   const meta = TRANSPORT_META[transportType];
   const normalizedLabel = transportLabel?.trim();
@@ -83,5 +139,18 @@ export function getTransportDisplay(transportType: TransportType, transportLabel
   return {
     ...meta,
     label: normalizedLabel ? normalizedLabel : meta.label,
+  };
+}
+
+export function getAccommodationDisplay(
+  accommodationType?: AccommodationType | null,
+  accommodationName?: string | null,
+) {
+  const meta = accommodationType ? ACCOMMODATION_META[accommodationType] : ACCOMMODATION_META.custom;
+  const normalizedName = accommodationName?.trim();
+
+  return {
+    ...meta,
+    label: normalizedName ? normalizedName : meta.label,
   };
 }
