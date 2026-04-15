@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { TRANSPORT_TYPES, type TransportType } from '@/features/trips/types';
+import {
+  ACCOMMODATION_TYPES,
+  TRANSPORT_TYPES,
+  type AccommodationType,
+  type TransportType,
+} from '@/features/trips/types';
 
 const REQUIRED_MESSAGE = 'This field is required.';
 
@@ -9,10 +14,25 @@ function isFiniteCoordinate(value: string) {
   return Number.isFinite(parsed);
 }
 
+const placeSchema = z.object({
+  title: z.string().trim().min(1, 'Enter a place name.'),
+  note: z.string(),
+});
+
+const memorySchema = z.object({
+  imageUri: z.string().trim().min(1, 'Pick a photo.'),
+  caption: z.string(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
+});
+
 const stopSchema = z.object({
   cityName: z.string().trim().min(1, REQUIRED_MESSAGE),
   countryName: z.string().trim().min(1, REQUIRED_MESSAGE),
   stayLabel: z.string(),
+  accommodationName: z.string(),
+  accommodationType: z.enum(ACCOMMODATION_TYPES).or(z.literal('')),
+  accommodationNote: z.string(),
   latitude: z
     .string()
     .trim()
@@ -31,6 +51,8 @@ const stopSchema = z.object({
       const parsed = Number(value);
       return parsed >= -180 && parsed <= 180;
     }, 'Longitude must be between -180 and 180.'),
+  places: z.array(placeSchema),
+  memories: z.array(memorySchema),
 });
 
 const legSchema = z.object({
@@ -71,8 +93,13 @@ export function createEmptyStop() {
     cityName: '',
     countryName: '',
     stayLabel: '',
+    accommodationName: '',
+    accommodationType: '' as '' | AccommodationType,
+    accommodationNote: '',
     latitude: '',
     longitude: '',
+    places: [],
+    memories: [],
   } satisfies CreateTripFormValues['stops'][number];
 }
 
@@ -81,4 +108,11 @@ export function createEmptyLeg(transportType: TransportType = 'train') {
     transportType,
     transportLabel: '',
   } satisfies CreateTripFormValues['legs'][number];
+}
+
+export function createEmptyPlace() {
+  return {
+    title: '',
+    note: '',
+  } satisfies CreateTripFormValues['stops'][number]['places'][number];
 }

@@ -1,9 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useCallback, useMemo, useRef } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { TravelColors } from '@/constants/theme';
 import { toCreateTripInput } from '@/features/trips/mappers';
+import { deleteManagedMemoryUris, isManagedMemoryUri } from '@/features/trips/memory-location';
 import {
   createEmptyLeg,
   createEmptyStop,
@@ -15,6 +17,11 @@ import { StopListEditor } from '@/features/trips/components/stop-list-editor';
 import type { CreateTripInput } from '@/features/trips/types';
 
 type TripFormProps = {
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  initialValues?: CreateTripFormValues;
   isSubmitting?: boolean;
   onSubmit(input: CreateTripInput): void | Promise<void>;
 };
@@ -25,14 +32,26 @@ const defaultValues: CreateTripFormValues = {
   legs: [createEmptyLeg()],
 };
 
-export function TripForm({ isSubmitting = false, onSubmit }: TripFormProps) {
+export function TripForm({
+  eyebrow = 'Create trip',
+  title = 'Build the itinerary first, then open it on the map.',
+  description = 'Start simple: title, stops, transport, and map coordinates. You can add auth and sync later without changing this local trip structure.',
+  submitLabel = 'Save trip',
+  initialValues,
+  isSubmitting = false,
+  onSubmit,
+}: TripFormProps) {
+  const formDefaults = useMemo(() => initialValues ?? defaultValues, [initialValues]);
+  const queuedMemoryDeletionUrisRef = useRef<Set<string>>(new Set());
+
   const {
     control,
     getValues,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<CreateTripFormValues>({
-    defaultValues,
+    defaultValues: formDefaults,
     resolver: zodResolver(createTripSchema),
   });
 
@@ -51,17 +70,24 @@ export function TripForm({ isSubmitting = false, onSubmit }: TripFormProps) {
     name: 'stops',
   });
 
-  const handleAddStopAfter = (index: number) => {
-    const existingLeg = index < legArray.fields.length ? getValues(`legs.${index}`) : null;
-
-    stopArray.insert(index + 1, createEmptyStop());
-
-    if (index >= legArray.fields.length) {
-      legArray.append(createEmptyLeg());
+  const queueMemoryDeletion = useCallback((imageUri: string) => {
+    if (!isManagedMemoryUri(imageUri)) {
       return;
     }
 
-    legArray.insert(index + 1, existingLeg ?? createEmptyLeg());
+    queuedMemoryDeletionUrisRef.current.add(imageUri.trim());
+  }, []);
+
+  const handleAddStopAfter = (index: number) => {
+    stopArray.insert(index + 1, createEmptyStop());
+
+    if (index >= legArray.fields.length) {
+      legArray.append(createEmptyLeg('custom'));
+      return;
+    }
+
+    legArray.insert(index + 1, createEmptyLeg('custom'));
+    legArray.update(index, createEmptyLeg('custom'));
   };
 
   const handleRemoveStop = (index: number) => {
@@ -69,8 +95,11 @@ export function TripForm({ isSubmitting = false, onSubmit }: TripFormProps) {
       return;
     }
 
+    const removedStop = getValues(`stops.${index}`);
     const previousLeg = getValues(`legs.${index - 1}`);
     const nextLeg = getValues(`legs.${index}`);
+
+    removedStop?.memories.forEach((memory) => queueMemoryDeletion(memory.imageUri));
 
     stopArray.remove(index);
     legArray.remove(index);
@@ -91,19 +120,48 @@ export function TripForm({ isSubmitting = false, onSubmit }: TripFormProps) {
     legArray.update(index - 1, mergedLeg);
   };
 
+  const handleMoveStop = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+
+    if (targetIndex < 0 || targetIndex >= stopArray.fields.length) {
+      return;
+    }
+
+    stopArray.move(index, targetIndex);
+
+    const affectedLegStart = Math.max(0, Math.min(index, targetIndex) - 1);
+    const affectedLegEnd = Math.min(legArray.fields.length - 1, Math.max(index, targetIndex));
+
+    for (let legIndex = affectedLegStart; legIndex <= affectedLegEnd; legIndex += 1) {
+      legArray.update(legIndex, createEmptyLeg('custom'));
+    }
+  };
+
   const submitForm = async (values: CreateTripFormValues) => {
-    await onSubmit(toCreateTripInput(values));
+    const input = toCreateTripInput(values);
+    const retainedUris = new Set(
+      input.stops
+        .flatMap((stop) => stop.memories.map((memory) => memory.imageUri.trim()))
+        .filter((uri) => isManagedMemoryUri(uri)),
+    );
+
+    await onSubmit(input);
+
+    const queuedUris = Array.from(queuedMemoryDeletionUrisRef.current).filter(
+      (uri) => !retainedUris.has(uri),
+    );
+
+    deleteManagedMemoryUris(queuedUris);
+
+    queuedUris.forEach((uri) => queuedMemoryDeletionUrisRef.current.delete(uri));
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.heroCard}>
-        <Text style={styles.eyebrow}>Create trip</Text>
-        <Text style={styles.title}>Build the itinerary first, then open it on the map.</Text>
-        <Text style={styles.description}>
-          Start simple: title, stops, transport, and map coordinates. You can add auth and sync
-          later without changing this local trip structure.
-        </Text>
+        <View style={styles.heroCard}>
+          <Text style={styles.eyebrow}>{eyebrow}</Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.description}>{description}</Text>
       </View>
 
       <View style={styles.sectionCard}>
@@ -133,7 +191,11 @@ export function TripForm({ isSubmitting = false, onSubmit }: TripFormProps) {
         control={control}
         errors={errors}
         stopFields={stopArray.fields}
+        stopValues={stopValues ?? defaultValues.stops}
+        setValue={setValue}
+        onQueueMemoryDeletion={queueMemoryDeletion}
         onAddStopAfter={handleAddStopAfter}
+        onMoveStop={handleMoveStop}
         onRemoveStop={handleRemoveStop}
       />
 
@@ -151,7 +213,9 @@ export function TripForm({ isSubmitting = false, onSubmit }: TripFormProps) {
         style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
         disabled={isSubmitting}
         onPress={handleSubmit(submitForm)}>
-        <Text style={styles.submitButtonText}>{isSubmitting ? 'Saving trip…' : 'Save trip'}</Text>
+        <Text style={styles.submitButtonText}>
+          {isSubmitting ? 'Saving trip…' : submitLabel}
+        </Text>
       </Pressable>
     </View>
   );

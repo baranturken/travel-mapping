@@ -1,4 +1,4 @@
-import { getTransportDisplay, type TripDetail } from '@/features/trips/types';
+import { getAccommodationDisplay, getTransportDisplay, type TripDetail } from '@/features/trips/types';
 
 function serializeForInlineScript(value: unknown) {
   return JSON.stringify(value).replace(/</g, '\\u003c');
@@ -9,7 +9,30 @@ export function buildLeafletHtml(trip: TripDetail) {
 
   const mapPayload = {
     title: trip.title,
-    stops: trip.stops,
+    stops: trip.stops.map((stop) => {
+      const hasAccommodation = Boolean(stop.accommodationName?.trim() || stop.accommodationType);
+      const accommodation = hasAccommodation
+        ? getAccommodationDisplay(stop.accommodationType, stop.accommodationName)
+        : null;
+      const locatedMemoryCount = stop.memories.filter(
+        (memory) => memory.latitude !== null && memory.longitude !== null,
+      ).length;
+
+      return {
+        id: stop.id,
+        cityName: stop.cityName,
+        countryName: stop.countryName,
+        stayLabel: stop.stayLabel,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+        placeTitles: stop.places.slice(0, 2).map((place) => place.title),
+        accommodationLabel: accommodation?.label ?? null,
+        accommodationEmoji: accommodation?.emoji ?? null,
+        accommodationNote: stop.accommodationNote,
+        memoryCount: stop.memories.length,
+        locatedMemoryCount,
+      };
+    }),
     legs: trip.legs
       .map((leg) => {
         const from = stopLookup[leg.fromStopId];
@@ -56,16 +79,36 @@ export function buildLeafletHtml(trip: TripDetail) {
         background: #f6fbff;
       }
 
-      .transport-pill {
+      .transport-chip {
+        align-items: center;
         background: rgba(255, 255, 255, 0.94);
         border: 1px solid #c7dbf2;
         border-radius: 999px;
+        box-shadow: 0 8px 18px rgba(21, 48, 75, 0.1);
         color: #15304b;
+        display: inline-flex;
         font-size: 12px;
         font-weight: 700;
-        padding: 4px 10px;
+        gap: 8px;
+        padding: 4px 10px 4px 4px;
         white-space: nowrap;
-        box-shadow: 0 8px 18px rgba(21, 48, 75, 0.1);
+      }
+
+      .transport-icon {
+        align-items: center;
+        background: #edf5fd;
+        border-radius: 999px;
+        display: inline-flex;
+        flex-shrink: 0;
+        font-size: 12px;
+        height: 22px;
+        justify-content: center;
+        line-height: 1;
+        width: 22px;
+      }
+
+      .transport-label {
+        display: inline-block;
       }
 
       .stop-dot {
@@ -80,6 +123,7 @@ export function buildLeafletHtml(trip: TripDetail) {
         justify-content: center;
         width: 24px;
       }
+
     </style>
   </head>
   <body>
@@ -122,11 +166,32 @@ export function buildLeafletHtml(trip: TripDetail) {
         }).addTo(map);
 
         const stayLine = stop.stayLabel ? '<br />' + escapeHtml(stop.stayLabel) : '';
+        const accommodationLine = stop.accommodationLabel
+          ? '<br />' + escapeHtml(stop.accommodationEmoji + ' ' + stop.accommodationLabel)
+          : '';
+        const accommodationNoteLine = stop.accommodationNote
+          ? '<br />' + escapeHtml(stop.accommodationNote)
+          : '';
+        const placesLine = stop.placeTitles.length
+          ? '<br />Places: ' + escapeHtml(stop.placeTitles.join(', '))
+          : '';
+        const memoryLine = stop.memoryCount
+          ? '<br />Memories: ' + escapeHtml(stop.memoryCount + ' photo' + (stop.memoryCount > 1 ? 's' : ''))
+          : '';
+        const locatedMemoryLine = stop.locatedMemoryCount
+          ? '<br />Map-linked photos: ' + escapeHtml(String(stop.locatedMemoryCount))
+          : '';
+
         marker.bindPopup(
           '<strong>' +
             escapeHtml((index + 1) + '. ' + stop.cityName + ', ' + stop.countryName) +
             '</strong>' +
-            stayLine
+            stayLine +
+            accommodationLine +
+            accommodationNoteLine +
+            placesLine +
+            memoryLine +
+            locatedMemoryLine
         );
         bounds.push([stop.latitude, stop.longitude]);
       });
@@ -153,8 +218,9 @@ export function buildLeafletHtml(trip: TripDetail) {
           icon: L.divIcon({
             className: '',
             html:
-              '<div class="transport-pill">' +
-              escapeHtml(leg.transportEmoji + ' ' + leg.transportLabel) +
+              '<div class="transport-chip">' +
+              '<span class="transport-icon">' + escapeHtml(leg.transportEmoji) + '</span>' +
+              '<span class="transport-label">' + escapeHtml(leg.transportLabel) + '</span>' +
               '</div>',
           }),
         }).addTo(map);

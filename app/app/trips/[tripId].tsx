@@ -3,6 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,10 +16,18 @@ import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
 import { TripMapWebView } from '@/features/trips/components/trip-map-webview';
-import { formatTripUpdatedAt, formatTripStopLabel } from '@/features/trips/mappers';
+import {
+  formatTripUpdatedAt,
+  formatTripStopLabel,
+  toDuplicatedTripInput,
+} from '@/features/trips/mappers';
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
-import { getTransportDisplay } from '@/features/trips/types';
-import type { TripDetail } from '@/features/trips/types';
+import {
+  getAccommodationDisplay,
+  getTransportDisplay,
+  type TripDetail,
+  type TripStop,
+} from '@/features/trips/types';
 
 export default function TripDetailScreen() {
   const router = useRouter();
@@ -26,6 +36,8 @@ export default function TripDetailScreen() {
   const repository = useMemo(() => createSQLiteTripRepository(db), [db]);
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadTrip = useCallback(async () => {
@@ -55,6 +67,61 @@ export default function TripDetailScreen() {
       void loadTrip();
     }, [loadTrip]),
   );
+
+  const handleDeleteTrip = useCallback(() => {
+    if (!trip || isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete trip?',
+      'This will remove the saved itinerary and its stored photo memories from local storage on this device.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                setIsDeleting(true);
+                await repository.deleteTrip(trip.id);
+                router.replace('/');
+              } catch (error) {
+                const message = error instanceof Error ? error.message : 'Please try again.';
+                Alert.alert('Could not delete trip', message);
+              } finally {
+                setIsDeleting(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [isDeleting, repository, router, trip]);
+
+  const handleDuplicateTrip = useCallback(async () => {
+    if (!trip || isDuplicating) {
+      return;
+    }
+
+    try {
+      setIsDuplicating(true);
+      const duplicatedTripId = await repository.createTrip(toDuplicatedTripInput(trip));
+      router.push({
+        pathname: '/trips/[tripId]',
+        params: { tripId: duplicatedTripId },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Could not duplicate trip', message);
+    } finally {
+      setIsDuplicating(false);
+    }
+  }, [isDuplicating, repository, router, trip]);
 
   if (isLoading) {
     return (
@@ -91,6 +158,12 @@ export default function TripDetailScreen() {
     );
   }
 
+  const memoryPinCount = trip.stops.reduce(
+    (count, stop) =>
+      count + stop.memories.filter((memory) => memory.latitude !== null && memory.longitude !== null).length,
+    0,
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -100,27 +173,60 @@ export default function TripDetailScreen() {
           <Text style={styles.subtitle}>
             {trip.stops.length} stops • Updated {formatTripUpdatedAt(trip.updatedAt)}
           </Text>
+          <View style={styles.headerMetaRow}>
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>
+                {trip.stops.reduce((count, stop) => count + stop.places.length, 0)} places
+              </Text>
+            </View>
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>
+                {trip.stops.reduce((count, stop) => count + stop.memories.length, 0)} memories
+              </Text>
+            </View>
+            {memoryPinCount > 0 ? (
+              <View style={styles.metaPill}>
+                <Text style={styles.metaPillText}>{memoryPinCount} pinned on map</Text>
+              </View>
+            ) : null}
+          </View>
+          <Pressable
+            style={styles.editButton}
+            disabled={isDeleting || isDuplicating}
+            onPress={() =>
+              router.push({
+                pathname: '/trips/[tripId]/edit',
+                params: { tripId: trip.id },
+              })
+            }>
+            <Ionicons name="create-outline" size={16} color={TravelColors.primary} />
+            <Text style={styles.editButtonText}>Edit trip</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.duplicateButton, isDuplicating && styles.duplicateButtonDisabled]}
+            disabled={isDeleting || isDuplicating}
+            onPress={() => void handleDuplicateTrip()}>
+            <Ionicons name="copy-outline" size={16} color={TravelColors.primary} />
+            <Text style={styles.duplicateButtonText}>
+              {isDuplicating ? 'Duplicating…' : 'Duplicate trip'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
+            disabled={isDeleting || isDuplicating}
+            onPress={handleDeleteTrip}>
+            <Ionicons name="trash-outline" size={16} color={TravelColors.danger} />
+            <Text style={styles.deleteButtonText}>{isDeleting ? 'Deleting…' : 'Delete trip'}</Text>
+          </Pressable>
         </View>
 
         <TripMapWebView trip={trip} />
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Stops</Text>
+          <Text style={styles.sectionTitle}>Stops and story</Text>
           <View style={styles.list}>
             {trip.stops.map((stop, index) => (
-              <View key={stop.id} style={styles.rowCard}>
-                <View style={styles.stopIndexBadge}>
-                  <Text style={styles.stopIndexText}>{index + 1}</Text>
-                </View>
-                <View style={styles.rowContent}>
-                  <Text style={styles.rowTitle}>{formatTripStopLabel(stop)}</Text>
-                  <Text style={styles.rowBody}>
-                    {stop.stayLabel?.trim()
-                      ? stop.stayLabel
-                      : 'No stay label added for this stop yet.'}
-                  </Text>
-                </View>
-              </View>
+              <StopStoryCard key={stop.id} stop={stop} index={index} />
             ))}
           </View>
         </View>
@@ -156,6 +262,90 @@ export default function TripDetailScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function StopStoryCard({ stop, index }: { stop: TripStop; index: number }) {
+  const hasAccommodation = Boolean(stop.accommodationName?.trim() || stop.accommodationType);
+  const accommodation = hasAccommodation
+    ? getAccommodationDisplay(stop.accommodationType, stop.accommodationName)
+    : null;
+  const visiblePlaces = stop.places.slice(0, 3);
+  const extraPlaceCount = stop.places.length - visiblePlaces.length;
+  const visibleMemories = stop.memories.slice(0, 3);
+  const extraMemoryCount = stop.memories.length - visibleMemories.length;
+
+  return (
+    <View style={styles.rowCard}>
+      <View style={styles.stopIndexBadge}>
+        <Text style={styles.stopIndexText}>{index + 1}</Text>
+      </View>
+      <View style={styles.rowContent}>
+        <Text style={styles.rowTitle}>{formatTripStopLabel(stop)}</Text>
+        <Text style={styles.rowBody}>
+          {stop.stayLabel?.trim() ? stop.stayLabel : 'No stay label added for this stop yet.'}
+        </Text>
+
+        {accommodation ? (
+          <View style={styles.storyBlock}>
+            <Text style={styles.storyLabel}>Accommodation</Text>
+            <View style={styles.accommodationChip}>
+              <Text style={styles.accommodationChipText}>
+                {accommodation.emoji} {accommodation.label}
+              </Text>
+            </View>
+            {stop.accommodationNote?.trim() ? (
+              <Text style={styles.storyBody}>{stop.accommodationNote}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {stop.places.length > 0 ? (
+          <View style={styles.storyBlock}>
+            <Text style={styles.storyLabel}>Visited places</Text>
+            <View style={styles.placeChipRow}>
+              {visiblePlaces.map((place) => (
+                <View key={place.id} style={styles.placeChip}>
+                  <Text style={styles.placeChipTitle}>{place.title}</Text>
+                  {place.note?.trim() ? <Text style={styles.placeChipBody}>{place.note}</Text> : null}
+                </View>
+              ))}
+              {extraPlaceCount > 0 ? (
+                <View style={styles.morePill}>
+                  <Text style={styles.morePillText}>+{extraPlaceCount} more</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        {stop.memories.length > 0 ? (
+          <View style={styles.storyBlock}>
+            <Text style={styles.storyLabel}>Photo memories</Text>
+            <View style={styles.memoryGrid}>
+              {visibleMemories.map((memory) => (
+                <View key={memory.id} style={styles.memoryCard}>
+                  <Image source={{ uri: memory.imageUri }} style={styles.memoryImage} />
+                  <Text style={styles.memoryCaption}>
+                    {memory.caption?.trim() ? memory.caption : 'Photo memory'}
+                  </Text>
+                  <Text style={styles.memoryMeta}>
+                    {memory.latitude !== null && memory.longitude !== null
+                      ? 'Pinned on map'
+                      : 'Shown in stop gallery'}
+                  </Text>
+                </View>
+              ))}
+              {extraMemoryCount > 0 ? (
+                <View style={styles.morePill}>
+                  <Text style={styles.morePillText}>+{extraMemoryCount} more</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -228,6 +418,81 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  headerMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+  },
+  metaPill: {
+    borderRadius: 999,
+    backgroundColor: TravelColors.tintSurface,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+  },
+  metaPillText: {
+    color: TravelColors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  editButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  editButtonText: {
+    color: TravelColors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  duplicateButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: TravelColors.surface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  duplicateButtonDisabled: {
+    opacity: 0.6,
+  },
+  duplicateButtonText: {
+    color: TravelColors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  deleteButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: TravelColors.surface,
+    borderWidth: 1,
+    borderColor: '#efcaca',
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    color: TravelColors.danger,
+    fontSize: 14,
+    fontWeight: '700',
+  },
   sectionCard: {
     backgroundColor: TravelColors.surface,
     borderRadius: 24,
@@ -266,7 +531,7 @@ const styles = StyleSheet.create({
   },
   rowContent: {
     flex: 1,
-    gap: 4,
+    gap: 8,
   },
   rowTitle: {
     color: TravelColors.text,
@@ -278,6 +543,104 @@ const styles = StyleSheet.create({
     color: TravelColors.secondaryText,
     fontSize: 14,
     lineHeight: 20,
+  },
+  storyBlock: {
+    gap: 8,
+    marginTop: 2,
+  },
+  storyLabel: {
+    color: TravelColors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  storyBody: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  accommodationChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  accommodationChipText: {
+    color: TravelColors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  placeChipRow: {
+    gap: 8,
+  },
+  placeChip: {
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    padding: 12,
+    gap: 4,
+  },
+  placeChipTitle: {
+    color: TravelColors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  placeChipBody: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  memoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  morePill: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    backgroundColor: '#ffffff',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  morePillText: {
+    color: TravelColors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  memoryCard: {
+    width: 132,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    overflow: 'hidden',
+  },
+  memoryImage: {
+    width: '100%',
+    height: 92,
+    backgroundColor: '#dfeaf5',
+  },
+  memoryCaption: {
+    color: TravelColors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 10,
+    paddingTop: 9,
+  },
+  memoryMeta: {
+    color: TravelColors.mutedText,
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 10,
+    paddingTop: 4,
+    paddingBottom: 10,
   },
   legCard: {
     flexDirection: 'row',

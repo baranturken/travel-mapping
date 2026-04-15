@@ -79,6 +79,7 @@ export default function RootLayout() {
               name="trips/new"
               options={{ title: 'Create trip', presentation: 'card' }}
             />
+            <Stack.Screen name="trips/[tripId]/edit" options={{ title: 'Edit trip' }} />
             <Stack.Screen name="trips/[tripId]" options={{ title: 'Trip detail' }} />
           </Stack>
         </SQLiteProvider>
