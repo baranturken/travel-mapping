@@ -1,0 +1,15 @@
+export const TravelColors = {
+  primary: '#1f5ea8',
+  primaryStrong: '#18497f',
+  primarySoft: '#53a7ea',
+  background: '#f6fbff',
+  surface: '#ffffff',
+  surfaceMuted: '#f4f8fc',
+  tintSurface: '#edf5fd',
+  border: '#d8e6f5',
+  borderStrong: '#bdd2ea',
+  text: '#15304b',
+  secondaryText: '#46627f',
+  mutedText: '#6c87a2',
+  danger: '#b53c3c',
+} as const;

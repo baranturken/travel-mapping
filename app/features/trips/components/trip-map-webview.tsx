@@ -1,17 +1,120 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
 import { buildLeafletHtml } from '@/features/trips/map/build-leaflet-html';
+import {
+  fetchOsrmRoute,
+  getOsrmProfile,
+  type RouteCoordinate,
+} from '@/features/trips/routing/osrm-route-fetcher';
+import {
+  buildRouteCacheKey,
+  getCachedRoute,
+  setCachedRoute,
+  type CachedRoute,
+} from '@/features/trips/routing/route-cache';
 import type { TripDetail } from '@/features/trips/types';
+
+export type LegRouteData = {
+  geometry: RouteCoordinate[];
+  distanceMeters: number | null;
+  durationSeconds: number | null;
+};
 
 type TripMapWebViewProps = {
   trip: TripDetail;
+  onRoutesLoaded?: (routes: Record<string, LegRouteData>) => void;
 };
 
-export function TripMapWebView({ trip }: TripMapWebViewProps) {
-  const html = useMemo(() => buildLeafletHtml(trip), [trip]);
+export function TripMapWebView({ trip, onRoutesLoaded }: TripMapWebViewProps) {
+  const db = useSQLiteContext();
+  const [routeGeometries, setRouteGeometries] = useState<Record<string, RouteCoordinate[]>>({});
+  const [isRoutingLoading, setIsRoutingLoading] = useState(false);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    fetchAbortRef.current?.abort();
+    const abort = new AbortController();
+    fetchAbortRef.current = abort;
+
+    const stopLookup = Object.fromEntries(trip.stops.map((s) => [s.id, s]));
+    const routableLegs = trip.legs.filter((leg) => getOsrmProfile(leg.transportType) !== null);
+
+    if (routableLegs.length === 0) return;
+
+    setIsRoutingLoading(true);
+
+    void (async () => {
+      const geometryResult: Record<string, RouteCoordinate[]> = {};
+      const fullResult: Record<string, LegRouteData> = {};
+
+      await Promise.all(
+        routableLegs.map(async (leg) => {
+          if (abort.signal.aborted) return;
+
+          const from = stopLookup[leg.fromStopId];
+          const to = stopLookup[leg.toStopId];
+          if (!from || !to) return;
+
+          const profile = getOsrmProfile(leg.transportType)!;
+          const cacheKey = buildRouteCacheKey(
+            from.latitude,
+            from.longitude,
+            to.latitude,
+            to.longitude,
+            profile,
+          );
+
+          let cached: CachedRoute | null = await getCachedRoute(db, cacheKey);
+
+          if (!cached && !abort.signal.aborted) {
+            const fetched = await fetchOsrmRoute(
+              from.latitude,
+              from.longitude,
+              to.latitude,
+              to.longitude,
+              profile,
+            );
+
+            if (fetched && !abort.signal.aborted) {
+              await setCachedRoute(db, cacheKey, profile, 'osrm', fetched);
+              cached = {
+                geometry: fetched.geometry,
+                distanceMeters: fetched.distanceMeters,
+                durationSeconds: fetched.durationSeconds,
+              };
+            }
+          }
+
+          if (cached && !abort.signal.aborted) {
+            geometryResult[leg.id] = cached.geometry;
+            fullResult[leg.id] = {
+              geometry: cached.geometry,
+              distanceMeters: cached.distanceMeters,
+              durationSeconds: cached.durationSeconds,
+            };
+          }
+        }),
+      );
+
+      if (!abort.signal.aborted) {
+        setRouteGeometries(geometryResult);
+        setIsRoutingLoading(false);
+        onRoutesLoaded?.(fullResult);
+      }
+    })();
+
+    return () => abort.abort();
+  }, [db, trip.id, trip.legs, trip.stops, onRoutesLoaded]);
+
+  const html = useMemo(
+    () => buildLeafletHtml(trip, routeGeometries),
+    [trip, routeGeometries],
+  );
+
   const [hasLoadError, setHasLoadError] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
   const [showNetworkHint, setShowNetworkHint] = useState(false);
@@ -62,14 +165,22 @@ export function TripMapWebView({ trip }: TripMapWebViewProps) {
 
       <View style={styles.noticeCard}>
         <Text style={styles.noticeTitle}>
-          {showFallbackState ? 'Map fallback active' : showSlowLoadNotice ? 'Map still loading' : 'Map note'}
+          {showFallbackState
+            ? 'Map fallback active'
+            : showSlowLoadNotice
+              ? 'Map still loading'
+              : isRoutingLoading
+                ? 'Fetching routes…'
+                : 'Map note'}
         </Text>
         <Text style={styles.noticeBody}>
           {showFallbackState
             ? 'The itinerary summary below remains available even if the online map assets fail to load.'
             : showSlowLoadNotice
               ? 'The trip is still trying to load map assets. Keep this screen open for a moment before falling back to the itinerary summary.'
-              : 'This MVP map uses Leaflet and OpenStreetMap tiles. If the network is weak, the itinerary summary below remains the reliable local fallback.'}
+              : isRoutingLoading
+                ? 'Loading real road, rail, and path routes from OpenStreetMap. The map will update automatically when ready.'
+                : 'Routes shown use real road and path data from OpenStreetMap via OSRM. Planes and ferries use straight lines.'}
         </Text>
       </View>
 

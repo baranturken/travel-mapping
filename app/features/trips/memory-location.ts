@@ -168,7 +168,7 @@ export async function createMemoryFromAsset(asset: ImagePickerAsset): Promise<Me
 
   return {
     imageUri: persistedUri,
-    caption: asset.fileName ?? '',
+    caption: '',
     latitude,
     longitude,
   };

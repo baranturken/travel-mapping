@@ -5,22 +5,12 @@
 
 import { Platform } from 'react-native';
 
+import { TravelColors } from '@/constants/travel-colors';
+
+export { TravelColors } from '@/constants/travel-colors';
+
 const tintColorLight = '#1f5ea8';
 const tintColorDark = '#1f5ea8';
-
-export const TravelColors = {
-  primary: '#1f5ea8',
-  primarySoft: '#53a7ea',
-  background: '#f6fbff',
-  surface: '#ffffff',
-  tintSurface: '#edf5fd',
-  border: '#d8e6f5',
-  borderStrong: '#bdd2ea',
-  text: '#15304b',
-  secondaryText: '#46627f',
-  mutedText: '#6c87a2',
-  danger: '#b53c3c',
-} as const;
 
 export const Colors = {
   light: {

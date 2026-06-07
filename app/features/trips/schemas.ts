@@ -8,6 +8,28 @@ import {
 } from '@/features/trips/types';
 
 const REQUIRED_MESSAGE = 'This field is required.';
+const DATE_FORMAT_MESSAGE = 'Use YYYY-MM-DD.';
+
+function isValidCalendarDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [yearText, monthText, dayText] = value.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    Number.isInteger(year) &&
+    Number.isInteger(month) &&
+    Number.isInteger(day) &&
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
 
 function isFiniteCoordinate(value: string) {
   const parsed = Number(value);
@@ -29,6 +51,7 @@ const memorySchema = z.object({
 const stopSchema = z.object({
   cityName: z.string().trim().min(1, REQUIRED_MESSAGE),
   countryName: z.string().trim().min(1, REQUIRED_MESSAGE),
+  isHomeBase: z.boolean(),
   stayLabel: z.string(),
   accommodationName: z.string(),
   accommodationType: z.enum(ACCOMMODATION_TYPES).or(z.literal('')),
@@ -63,10 +86,55 @@ const legSchema = z.object({
 export const createTripSchema = z
   .object({
     title: z.string().trim().min(1, 'Enter a trip title.'),
+    startDate: z.string().trim(),
+    endDate: z.string().trim(),
     stops: z.array(stopSchema).min(2, 'Add at least two stops.'),
     legs: z.array(legSchema).min(1, 'Add at least one transport leg.'),
+    returnToStart: z.boolean(),
+    returnLeg: legSchema,
   })
   .superRefine((value, context) => {
+    const hasStartDate = value.startDate.length > 0;
+    const hasEndDate = value.endDate.length > 0;
+
+    if (hasStartDate && !isValidCalendarDate(value.startDate)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: DATE_FORMAT_MESSAGE,
+        path: ['startDate'],
+      });
+    }
+
+    if (hasEndDate && !isValidCalendarDate(value.endDate)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: DATE_FORMAT_MESSAGE,
+        path: ['endDate'],
+      });
+    }
+
+    if (hasStartDate !== hasEndDate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: hasStartDate ? 'Add an end date too.' : 'Add a start date too.',
+        path: [hasStartDate ? 'endDate' : 'startDate'],
+      });
+    }
+
+    if (
+      hasStartDate &&
+      hasEndDate &&
+      isValidCalendarDate(value.startDate) &&
+      isValidCalendarDate(value.endDate) &&
+      value.endDate < value.startDate
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'End date must be on or after the start date.',
+        path: ['endDate'],
+      });
+    }
+
     if (value.legs.length !== value.stops.length - 1) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -84,6 +152,14 @@ export const createTripSchema = z
         });
       }
     });
+
+    if (value.returnToStart && value.returnLeg.transportType === 'custom' && !value.returnLeg.transportLabel.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Add a custom transport label.',
+        path: ['returnLeg', 'transportLabel'],
+      });
+    }
   });
 
 export type CreateTripFormValues = z.infer<typeof createTripSchema>;
@@ -92,6 +168,7 @@ export function createEmptyStop() {
   return {
     cityName: '',
     countryName: '',
+    isHomeBase: false,
     stayLabel: '',
     accommodationName: '',
     accommodationType: '' as '' | AccommodationType,
@@ -108,6 +185,13 @@ export function createEmptyLeg(transportType: TransportType = 'train') {
     transportType,
     transportLabel: '',
   } satisfies CreateTripFormValues['legs'][number];
+}
+
+export function createDefaultReturnLeg() {
+  return {
+    transportType: 'plane' as TransportType,
+    transportLabel: '',
+  } satisfies CreateTripFormValues['returnLeg'];
 }
 
 export function createEmptyPlace() {

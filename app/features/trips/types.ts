@@ -1,5 +1,22 @@
-export const TRANSPORT_TYPES = ['plane', 'bus', 'ferry', 'train', 'car', 'custom'] as const;
-export const ACCOMMODATION_TYPES = ['hotel', 'airbnb', 'hostel', 'guesthouse', 'custom'] as const;
+export const TRANSPORT_TYPES = [
+  'plane',
+  'bus',
+  'ferry',
+  'train',
+  'car',
+  'walking',
+  'bicycle',
+  'motorcycle',
+  'custom',
+] as const;
+export const ACCOMMODATION_TYPES = [
+  'hotel',
+  'airbnb',
+  'apartment',
+  'hostel',
+  'guesthouse',
+  'custom',
+] as const;
 
 export type TransportType = (typeof TRANSPORT_TYPES)[number];
 export type AccommodationType = (typeof ACCOMMODATION_TYPES)[number];
@@ -28,6 +45,7 @@ export type TripStop = {
   orderIndex: number;
   cityName: string;
   countryName: string;
+  isHomeBase: boolean;
   stayLabel: string | null;
   accommodationName: string | null;
   accommodationType: AccommodationType | null;
@@ -51,6 +69,8 @@ export type TripLeg = {
 export type TripSummary = {
   id: string;
   title: string;
+  startDate: string | null;
+  endDate: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -81,6 +101,7 @@ export type CreateTripMemoryInput = {
 export type CreateTripStopInput = {
   cityName: string;
   countryName: string;
+  isHomeBase: boolean;
   stayLabel?: string | null;
   accommodationName?: string | null;
   accommodationType?: AccommodationType | null;
@@ -98,6 +119,8 @@ export type CreateTripLegInput = {
 
 export type CreateTripInput = {
   title: string;
+  startDate: string | null;
+  endDate: string | null;
   stops: CreateTripStopInput[];
   legs: CreateTripLegInput[];
 };
@@ -115,6 +138,9 @@ export const TRANSPORT_META: Record<
   ferry: { label: 'Ferry', emoji: '⛴️', dashed: false },
   train: { label: 'Train', emoji: '🚆', dashed: false },
   car: { label: 'Car', emoji: '🚗', dashed: false },
+  walking: { label: 'Walking', emoji: '🚶', dashed: true },
+  bicycle: { label: 'Bicycle', emoji: '🚲', dashed: true },
+  motorcycle: { label: 'Motorcycle', emoji: '🏍️', dashed: false },
   custom: { label: 'Custom', emoji: '🧭', dashed: false },
 };
 
@@ -125,11 +151,12 @@ export const ACCOMMODATION_META: Record<
     emoji: string;
   }
 > = {
-  hotel: { label: 'Hotel', emoji: '🏨' },
+  hotel: { label: 'Hotel', emoji: '🏢' },
   airbnb: { label: 'Airbnb', emoji: '🏠' },
-  hostel: { label: 'Hostel', emoji: '🛏️' },
-  guesthouse: { label: 'Guesthouse', emoji: '🗝️' },
-  custom: { label: 'Stay', emoji: '📍' },
+  apartment: { label: 'Apartment', emoji: '🏘️' },
+  hostel: { label: 'Hostel', emoji: '🛎️' },
+  guesthouse: { label: 'Guesthouse', emoji: '🏡' },
+  custom: { label: 'Other stay', emoji: '🛖' },
 };
 
 export function getTransportDisplay(transportType: TransportType, transportLabel?: string | null) {
