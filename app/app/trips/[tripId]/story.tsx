@@ -427,29 +427,31 @@ export default function TripStoryScreen() {
           disabled={isGeneratingPhotoStory}
           onPress={handleOpenPhotoPicker}>
           {isGeneratingPhotoStory ? (
-            <ActivityIndicator size="small" color={TravelColors.primary} />
+            <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Ionicons name="images-outline" size={18} color={TravelColors.primary} />
+            <Ionicons name="images-outline" size={18} color="#ffffff" />
           )}
           <Text style={styles.photoStoryButtonText}>
             {isGeneratingPhotoStory ? 'Building story…' : 'Share as photo story'}
           </Text>
         </Pressable>
-        <Pressable
-          style={[styles.cardImageButton, isGeneratingPhotoStory && styles.buttonDisabled]}
-          disabled={isGeneratingPhotoStory}
-          onPress={handleShareCardAsImage}>
-          {isGeneratingPhotoStory ? (
-            <ActivityIndicator size="small" color={TravelColors.primary} />
-          ) : (
-            <Ionicons name="card-outline" size={18} color={TravelColors.primary} />
-          )}
-          <Text style={styles.cardImageButtonText}>Share story card</Text>
-        </Pressable>
-        <Pressable style={styles.shareButton} onPress={() => void handleShare()}>
-          <Ionicons name="share-outline" size={18} color="#ffffff" />
-          <Text style={styles.shareButtonText}>Share as text</Text>
-        </Pressable>
+        <View style={styles.secondaryButtonRow}>
+          <Pressable
+            style={[styles.cardImageButton, isGeneratingPhotoStory && styles.buttonDisabled]}
+            disabled={isGeneratingPhotoStory}
+            onPress={handleShareCardAsImage}>
+            {isGeneratingPhotoStory ? (
+              <ActivityIndicator size="small" color={TravelColors.primary} />
+            ) : (
+              <Ionicons name="card-outline" size={16} color={TravelColors.primary} />
+            )}
+            <Text style={styles.cardImageButtonText}>Card only</Text>
+          </Pressable>
+          <Pressable style={styles.shareButton} onPress={() => void handleShare()}>
+            <Ionicons name="text-outline" size={16} color={TravelColors.primary} />
+            <Text style={styles.shareButtonText}>Share as text</Text>
+          </Pressable>
+        </View>
       </View>
 
       {photoStoryHtml ? (
@@ -929,35 +931,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderRadius: 999,
-    paddingVertical: 14,
-    backgroundColor: TravelColors.tintSurface,
-    borderWidth: 1,
-    borderColor: TravelColors.borderStrong,
-  },
-  photoStoryButtonText: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
-  cardImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingVertical: 14,
-    backgroundColor: TravelColors.tintSurface,
-    borderWidth: 1,
-    borderColor: TravelColors.borderStrong,
-  },
-  cardImageButtonText: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
-  buttonDisabled: { opacity: 0.6 },
-  shareButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingVertical: 14,
+    paddingVertical: 15,
     backgroundColor: TravelColors.primary,
   },
-  shareButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  photoStoryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  secondaryButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cardImageButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 999,
+    paddingVertical: 12,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  cardImageButtonText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  buttonDisabled: { opacity: 0.6 },
+  shareButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 999,
+    paddingVertical: 12,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  shareButtonText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
   templatePreviewCard: {
     width: 340,
     borderRadius: 28,
