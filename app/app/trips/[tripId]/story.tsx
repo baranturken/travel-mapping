@@ -2,10 +2,12 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -28,6 +30,12 @@ import { computeTripStats, formatDistanceKm } from '@/features/trips/trip-stats'
 import type { TripDetail } from '@/features/trips/types';
 import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
 
+type PickerMemory = {
+  id: string;
+  stopLabel: string;
+  imageUri: string;
+};
+
 export default function TripStoryScreen() {
   const router = useRouter();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
@@ -40,6 +48,8 @@ export default function TripStoryScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoStoryHtml, setPhotoStoryHtml] = useState<string | null>(null);
   const [isGeneratingPhotoStory, setIsGeneratingPhotoStory] = useState(false);
+  const [pickerMemories, setPickerMemories] = useState<PickerMemory[]>([]);
+  const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false);
 
   const loadStory = useCallback(async () => {
     setIsLoading(true);
@@ -137,26 +147,53 @@ export default function TripStoryScreen() {
     }
   }, [legRoutes, trip]);
 
-  const handleSharePhotoStory = useCallback(async () => {
+  const handleOpenPhotoPicker = useCallback(() => {
     if (!trip || isGeneratingPhotoStory) return;
-    setIsGeneratingPhotoStory(true);
 
-    const allMemories = trip.stops.flatMap((s) => s.memories).slice(0, 4);
-    const photoBase64s: string[] = [];
-    for (const mem of allMemories) {
-      try {
-        const b64 = await FileSystem.readAsStringAsync(mem.imageUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        photoBase64s.push(b64);
-      } catch {
-        // skip unreadable photo
-      }
+    const allMemories: PickerMemory[] = trip.stops.flatMap((s) =>
+      s.memories.map((m) => ({
+        id: m.id,
+        stopLabel: `${s.cityName}, ${s.countryName}`,
+        imageUri: m.imageUri,
+      })),
+    );
+
+    if (allMemories.length === 0) {
+      // No photos — generate story card without photos immediately
+      setIsGeneratingPhotoStory(true);
+      const stats = computeTripStats(trip, legRoutes);
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, []));
+      return;
     }
 
-    const stats = computeTripStats(trip, legRoutes);
-    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s));
+    setPickerMemories(allMemories);
+    setIsPhotoPickerOpen(true);
   }, [isGeneratingPhotoStory, legRoutes, trip]);
+
+  const handlePickerConfirm = useCallback(
+    async (selectedUris: string[]) => {
+      setIsPhotoPickerOpen(false);
+      if (!trip) return;
+
+      setIsGeneratingPhotoStory(true);
+
+      const photoBase64s: string[] = [];
+      for (const uri of selectedUris) {
+        try {
+          const b64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          photoBase64s.push(b64);
+        } catch {
+          // skip unreadable photo
+        }
+      }
+
+      const stats = computeTripStats(trip, legRoutes);
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s));
+    },
+    [legRoutes, trip],
+  );
 
   const handlePhotoStoryRendered = useCallback(
     async (event: { nativeEvent: { data: string } }) => {
@@ -238,7 +275,7 @@ export default function TripStoryScreen() {
         <Pressable
           style={[styles.photoStoryButton, isGeneratingPhotoStory && styles.buttonDisabled]}
           disabled={isGeneratingPhotoStory}
-          onPress={() => void handleSharePhotoStory()}>
+          onPress={handleOpenPhotoPicker}>
           <Ionicons name="images-outline" size={18} color={TravelColors.primary} />
           <Text style={styles.photoStoryButtonText}>
             {isGeneratingPhotoStory ? 'Building photo story…' : 'Share as photo story'}
@@ -261,7 +298,103 @@ export default function TripStoryScreen() {
           />
         </View>
       ) : null}
+
+      <PhotoPickerModal
+        memories={pickerMemories}
+        visible={isPhotoPickerOpen}
+        onConfirm={(uris) => void handlePickerConfirm(uris)}
+        onCancel={() => setIsPhotoPickerOpen(false)}
+      />
     </SafeAreaView>
+  );
+}
+
+function PhotoPickerModal({
+  memories,
+  visible,
+  onConfirm,
+  onCancel,
+}: {
+  memories: PickerMemory[];
+  visible: boolean;
+  onConfirm(selectedUris: string[]): void;
+  onCancel(): void;
+}) {
+  const [selectedUris, setSelectedUris] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (visible) setSelectedUris([]);
+  }, [visible]);
+
+  const toggle = (uri: string) => {
+    setSelectedUris((prev) => {
+      if (prev.includes(uri)) return prev.filter((u) => u !== uri);
+      if (prev.length >= 4) return prev;
+      return [...prev, uri];
+    });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View style={pickerStyles.backdrop}>
+        <View style={pickerStyles.sheet}>
+          <View style={pickerStyles.header}>
+            <View style={pickerStyles.headerCopy}>
+              <Text style={pickerStyles.title}>Choose photos</Text>
+              <Text style={pickerStyles.subtitle}>
+                {selectedUris.length === 0
+                  ? 'Select up to 4 for your story'
+                  : `${selectedUris.length} of 4 selected`}
+              </Text>
+            </View>
+            <Pressable style={pickerStyles.closeButton} onPress={onCancel}>
+              <Ionicons name="close" size={20} color={TravelColors.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={pickerStyles.grid}>
+            {memories.map((mem) => {
+              const orderIndex = selectedUris.indexOf(mem.imageUri);
+              const isSelected = orderIndex !== -1;
+              const isDisabled = !isSelected && selectedUris.length >= 4;
+
+              return (
+                <Pressable
+                  key={mem.id}
+                  style={[
+                    pickerStyles.thumb,
+                    isSelected && pickerStyles.thumbSelected,
+                    isDisabled && pickerStyles.thumbDisabled,
+                  ]}
+                  onPress={() => toggle(mem.imageUri)}>
+                  <Image source={{ uri: mem.imageUri }} style={pickerStyles.thumbImage} />
+                  {isSelected ? (
+                    <View style={pickerStyles.orderBadge}>
+                      <Text style={pickerStyles.orderBadgeText}>{orderIndex + 1}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={pickerStyles.thumbLabel} numberOfLines={1}>
+                    {mem.stopLabel}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={pickerStyles.footer}>
+            <Pressable
+              style={[pickerStyles.confirmButton, selectedUris.length === 0 && pickerStyles.confirmDisabled]}
+              disabled={selectedUris.length === 0}
+              onPress={() => onConfirm(selectedUris)}>
+              <Ionicons name="images-outline" size={18} color="#ffffff" />
+              <Text style={pickerStyles.confirmText}>
+                {selectedUris.length === 0 ? 'Select photos first' : 'Create story'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -379,5 +512,127 @@ const styles = StyleSheet.create({
   },
   hiddenWebView: {
     flex: 1,
+  },
+});
+
+const pickerStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(12,23,34,0.55)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    maxHeight: '80%',
+    backgroundColor: TravelColors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: TravelColors.border,
+    gap: 12,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  title: {
+    color: TravelColors.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TravelColors.tintSurface,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 16,
+    gap: 12,
+  },
+  thumb: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2.5,
+    borderColor: 'transparent',
+    backgroundColor: TravelColors.tintSurface,
+    position: 'relative',
+  },
+  thumbSelected: {
+    borderColor: TravelColors.primary,
+  },
+  thumbDisabled: {
+    opacity: 0.4,
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbLabel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  orderBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: TravelColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orderBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  footer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: TravelColors.border,
+  },
+  confirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.primary,
+  },
+  confirmDisabled: {
+    opacity: 0.45,
+  },
+  confirmText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

@@ -156,12 +156,13 @@ const styles = StyleSheet.create({
   },
   timeline: {
     marginTop: 6,
-    gap: 2,
+    gap: 4,
   },
   stopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    paddingVertical: 4,
   },
   stopBadge: {
     width: 28,
@@ -192,7 +193,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 4,
+    paddingVertical: 7,
     paddingLeft: 14,
   },
   connectorLine: {

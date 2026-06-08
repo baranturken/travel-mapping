@@ -9,6 +9,16 @@ function ser(value: unknown) {
 
 type StopEntry = { city: string; country: string; transport: string | null };
 
+function decimateCoords(coords: [number, number][], maxPoints: number): [number, number][] {
+  if (coords.length <= maxPoints) return coords;
+  const step = Math.ceil(coords.length / maxPoints);
+  const result: [number, number][] = [];
+  for (let i = 0; i < coords.length; i += step) result.push(coords[i]);
+  const last = coords[coords.length - 1];
+  if (result[result.length - 1] !== last) result.push(last);
+  return result;
+}
+
 export function buildPhotoStoryHtml(
   trip: TripDetail,
   stats: TripStats,
@@ -35,6 +45,27 @@ export function buildPhotoStoryHtml(
     };
   });
 
+  // Build simplified route segments for the minimap
+  const stopById = new Map(trip.stops.map((s) => [s.id, s]));
+  const routeSegments: [number, number][][] = trip.legs
+    .map((leg) => {
+      const routeData = legRoutes[leg.id];
+      if (routeData && routeData.geometry.length >= 2) {
+        return decimateCoords(routeData.geometry as [number, number][], 80);
+      }
+      const from = stopById.get(leg.fromStopId);
+      const to = stopById.get(leg.toStopId);
+      if (from && to)
+        return [
+          [from.latitude, from.longitude],
+          [to.latitude, to.longitude],
+        ] as [number, number][];
+      return null;
+    })
+    .filter((seg): seg is [number, number][] => seg !== null && seg.length >= 2);
+
+  const stopCoords: [number, number][] = trip.stops.map((s) => [s.latitude, s.longitude]);
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -52,6 +83,8 @@ export function buildPhotoStoryHtml(
   const TITLE   = ${ser(trip.title)};
   const STATS   = ${ser(statItems)};
   const STOPS   = ${ser(stopEntries)};
+  const ROUTE_SEGS   = ${ser(routeSegments)};
+  const STOP_COORDS  = ${ser(stopCoords)};
 
   const canvas = document.getElementById('c');
   const ctx    = canvas.getContext('2d');
@@ -168,6 +201,75 @@ export function buildPhotoStoryHtml(
     ctx.fillRect(0, fadeY, W, fadeH);
   }
 
+  // ── route minimap ────────────────────────────────────────────────────
+
+  if (ROUTE_SEGS.length > 0) {
+    const MAP_W = 250, MAP_H = 250, MAP_PAD = 20;
+    const MAP_X = W - MAP_W - 52;
+    const MAP_Y = 52;
+
+    // Collect bounds
+    const allLats = [], allLons = [];
+    for (const seg of ROUTE_SEGS) {
+      for (const [lat, lon] of seg) { allLats.push(lat); allLons.push(lon); }
+    }
+    const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
+    const minLon = Math.min(...allLons), maxLon = Math.max(...allLons);
+    const latRange = maxLat - minLat || 0.01;
+    const lonRange = maxLon - minLon || 0.01;
+    const innerW = MAP_W - MAP_PAD * 2;
+    const innerH = MAP_H - MAP_PAD * 2;
+
+    // Preserve aspect ratio so shapes don't look stretched
+    const scaleRaw = Math.min(innerW / lonRange, innerH / latRange);
+    const drawW = lonRange * scaleRaw;
+    const drawH = latRange * scaleRaw;
+    const offX  = MAP_X + MAP_PAD + (innerW - drawW) / 2;
+    const offY  = MAP_Y + MAP_PAD + (innerH - drawH) / 2;
+
+    const scaleX = (lon) => offX + (lon - minLon) / lonRange * drawW;
+    const scaleY = (lat) => offY + drawH - (lat - minLat) / latRange * drawH;
+
+    // Background panel
+    ctx.fillStyle = 'rgba(8, 18, 36, 0.78)';
+    roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 22);
+    ctx.fill();
+
+    // Thin border
+    ctx.strokeStyle = 'rgba(127,180,240,0.25)';
+    ctx.lineWidth = 1.5;
+    roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 22);
+    ctx.stroke();
+
+    // Route lines — glow pass then solid pass
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass === 0 ? 'rgba(77,171,247,0.22)' : '#4dabf7';
+      ctx.lineWidth   = pass === 0 ? 12 : 4;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+      for (const seg of ROUTE_SEGS) {
+        if (seg.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(scaleX(seg[0][1]), scaleY(seg[0][0]));
+        for (let i = 1; i < seg.length; i++) {
+          ctx.lineTo(scaleX(seg[i][1]), scaleY(seg[i][0]));
+        }
+        ctx.stroke();
+      }
+    }
+
+    // Stop dots
+    for (const [lat, lon] of STOP_COORDS) {
+      const cx = scaleX(lon), cy = scaleY(lat);
+      ctx.fillStyle = '#0f2540';
+      ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4dabf7';
+      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
   // ── info area ────────────────────────────────────────────────────────
 
   ctx.fillStyle = BG;
@@ -205,12 +307,12 @@ export function buildPhotoStoryHtml(
     ctx.fillText(stat, sx + pr, y);
     sx += pw + 16;
   }
-  y += 64;
+  y += 72;
 
   // divider
   ctx.fillStyle = 'rgba(255,255,255,0.1)';
   ctx.fillRect(PAD, y, W - PAD * 2, 1);
-  y += 32;
+  y += 40;
 
   // route stops
   const maxVisible = Math.min(STOPS.length, 4);
@@ -220,44 +322,46 @@ export function buildPhotoStoryHtml(
     // badge
     ctx.fillStyle = '#2f6db8';
     ctx.beginPath();
-    ctx.arc(PAD + 20, y + 4, 22, 0, Math.PI * 2);
+    ctx.arc(PAD + 20, y + 8, 22, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle   = '#ffffff';
     ctx.font        = 'bold 24px sans-serif';
     ctx.textAlign   = 'center';
-    ctx.fillText(String(i + 1), PAD + 20, y + 14);
+    ctx.fillText(String(i + 1), PAD + 20, y + 18);
     ctx.textAlign   = 'left';
 
     // city + country
-    ctx.font      = 'bold 36px sans-serif';
+    ctx.font      = 'bold 38px sans-serif';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(stop.city, PAD + 56, y + 8);
-    ctx.font      = '28px sans-serif';
+    ctx.fillText(stop.city, PAD + 58, y + 10);
+    ctx.font      = '29px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText(stop.country, PAD + 56, y + 42);
-    y += 72;
+    ctx.fillText(stop.country, PAD + 58, y + 48);
+    y += 86;
 
     // connector + transport label
     if (stop.transport && i < maxVisible - 1) {
       ctx.fillStyle = 'rgba(127,180,240,0.35)';
-      ctx.fillRect(PAD + 18, y - 2, 4, 26);
-      ctx.font      = 'bold 27px sans-serif';
+      ctx.fillRect(PAD + 18, y - 4, 4, 30);
+      ctx.font      = 'bold 28px sans-serif';
       ctx.fillStyle = '#7fb4f0';
-      ctx.fillText(stop.transport, PAD + 44, y + 20);
-      y += 38;
+      ctx.fillText(stop.transport, PAD + 46, y + 22);
+      y += 52;
     }
   }
 
   if (STOPS.length > 4) {
     ctx.font      = '28px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillText('+' + (STOPS.length - 4) + ' more stops', PAD + 56, y + 8);
+    ctx.fillText('+' + (STOPS.length - 4) + ' more stops', PAD + 58, y + 8);
   }
 
-  // watermark
+  // watermark — bottom-right
   ctx.font      = '24px sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.22)';
-  ctx.fillText('Made with Travel Mapping', PAD, H - 72);
+  ctx.textAlign = 'right';
+  ctx.fillText('Made with Travel Mapping', W - PAD, H - 72);
+  ctx.textAlign = 'left';
 
   // ── export ───────────────────────────────────────────────────────────
 

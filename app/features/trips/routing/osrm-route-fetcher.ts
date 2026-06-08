@@ -32,8 +32,12 @@ export async function fetchOsrmRoute(
 ): Promise<OsrmRouteResult | null> {
   const url = `https://router.project-osrm.org/route/v1/${profile}/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!response.ok) return null;
 
     const data = (await response.json()) as {
@@ -54,6 +58,7 @@ export async function fetchOsrmRoute(
       durationSeconds: route.duration ?? 0,
     };
   } catch {
+    clearTimeout(timeoutId);
     return null;
   }
 }
