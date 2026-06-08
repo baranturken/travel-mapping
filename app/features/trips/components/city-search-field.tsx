@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { searchWorldCities, type CityOption } from '@/features/locations/world-cities';
@@ -136,7 +137,7 @@ export function CitySearchField({ value, errorMessage, onSelect, onManualSave }:
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
       <Modal visible={isVisible} animationType="slide" onRequestClose={closeModal}>
-        <View style={styles.modalScreen}>
+        <SafeAreaView style={styles.modalScreen}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select a city</Text>
             <Pressable style={styles.closeButton} onPress={closeModal}>
@@ -243,7 +244,7 @@ export function CitySearchField({ value, errorMessage, onSelect, onManualSave }:
               </View>
             ) : null}
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -296,8 +297,8 @@ const styles = StyleSheet.create({
   modalScreen: {
     flex: 1,
     backgroundColor: TravelColors.background,
-    paddingTop: 72,
     paddingHorizontal: 20,
+    paddingTop: 20,
     gap: 14,
   },
   modalHeader: {
