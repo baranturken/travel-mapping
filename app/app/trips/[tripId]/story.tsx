@@ -159,7 +159,6 @@ export default function TripStoryScreen() {
     );
 
     if (allMemories.length === 0) {
-      // No photos — generate story card without photos immediately
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
       setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, []));
@@ -168,6 +167,13 @@ export default function TripStoryScreen() {
 
     setPickerMemories(allMemories);
     setIsPhotoPickerOpen(true);
+  }, [isGeneratingPhotoStory, legRoutes, trip]);
+
+  const handleShareCardAsImage = useCallback(() => {
+    if (!trip || isGeneratingPhotoStory) return;
+    setIsGeneratingPhotoStory(true);
+    const stats = computeTripStats(trip, legRoutes);
+    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, []));
   }, [isGeneratingPhotoStory, legRoutes, trip]);
 
   const handlePickerConfirm = useCallback(
@@ -278,8 +284,15 @@ export default function TripStoryScreen() {
           onPress={handleOpenPhotoPicker}>
           <Ionicons name="images-outline" size={18} color={TravelColors.primary} />
           <Text style={styles.photoStoryButtonText}>
-            {isGeneratingPhotoStory ? 'Building photo story…' : 'Share as photo story'}
+            {isGeneratingPhotoStory ? 'Building story…' : 'Share as photo story'}
           </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.cardImageButton, isGeneratingPhotoStory && styles.buttonDisabled]}
+          disabled={isGeneratingPhotoStory}
+          onPress={handleShareCardAsImage}>
+          <Ionicons name="card-outline" size={18} color={TravelColors.primary} />
+          <Text style={styles.cardImageButtonText}>Share story card</Text>
         </Pressable>
         <Pressable style={styles.shareButton} onPress={() => void handleShare()}>
           <Ionicons name="share-outline" size={18} color="#ffffff" />
@@ -391,6 +404,9 @@ function PhotoPickerModal({
                 {selectedUris.length === 0 ? 'Select photos first' : 'Create story'}
               </Text>
             </Pressable>
+            <Pressable style={pickerStyles.skipButton} onPress={() => onConfirm([])}>
+              <Text style={pickerStyles.skipText}>Share without photos</Text>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -488,6 +504,22 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  cardImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  cardImageButtonText: {
+    color: TravelColors.primary,
+    fontSize: 15,
+    fontWeight: '700',
   },
   shareButton: {
     flexDirection: 'row',
@@ -634,5 +666,14 @@ const pickerStyles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  skipButton: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  skipText: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

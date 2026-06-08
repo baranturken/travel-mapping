@@ -204,23 +204,25 @@ export function buildPhotoStoryHtml(
   // ── route minimap ────────────────────────────────────────────────────
 
   if (ROUTE_SEGS.length > 0) {
-    const MAP_W = 250, MAP_H = 250, MAP_PAD = 20;
+    const MAP_W = 310, MAP_H = 310, MAP_PAD = 24;
     const MAP_X = W - MAP_W - 52;
     const MAP_Y = 52;
 
-    // Collect bounds
-    const allLats = [], allLons = [];
+    // Collect bounds via loop (spread on large arrays risks stack overflow)
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLon = Infinity, maxLon = -Infinity;
     for (const seg of ROUTE_SEGS) {
-      for (const [lat, lon] of seg) { allLats.push(lat); allLons.push(lon); }
+      for (const [lat, lon] of seg) {
+        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+        if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+      }
     }
-    const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
-    const minLon = Math.min(...allLons), maxLon = Math.max(...allLons);
     const latRange = maxLat - minLat || 0.01;
     const lonRange = maxLon - minLon || 0.01;
     const innerW = MAP_W - MAP_PAD * 2;
     const innerH = MAP_H - MAP_PAD * 2;
 
-    // Preserve aspect ratio so shapes don't look stretched
+    // Preserve aspect ratio
     const scaleRaw = Math.min(innerW / lonRange, innerH / latRange);
     const drawW = lonRange * scaleRaw;
     const drawH = latRange * scaleRaw;
@@ -230,23 +232,18 @@ export function buildPhotoStoryHtml(
     const scaleX = (lon) => offX + (lon - minLon) / lonRange * drawW;
     const scaleY = (lat) => offY + drawH - (lat - minLat) / latRange * drawH;
 
-    // Background panel
-    ctx.fillStyle = 'rgba(8, 18, 36, 0.78)';
-    roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 22);
-    ctx.fill();
-
-    // Thin border
-    ctx.strokeStyle = 'rgba(127,180,240,0.25)';
-    ctx.lineWidth = 1.5;
-    roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 22);
-    ctx.stroke();
-
-    // Route lines — glow pass then solid pass
-    for (let pass = 0; pass < 2; pass++) {
-      ctx.strokeStyle = pass === 0 ? 'rgba(77,171,247,0.22)' : '#4dabf7';
-      ctx.lineWidth   = pass === 0 ? 12 : 4;
-      ctx.lineCap     = 'round';
-      ctx.lineJoin    = 'round';
+    // Three-pass route rendering — dark outline → mid halo → bright fill
+    // (same technique as subtitle text: dark outside, bright inside)
+    const passes = [
+      { width: 14, style: 'rgba(2, 8, 20, 0.85)' },
+      { width: 9,  style: 'rgba(15, 60, 120, 0.6)' },
+      { width: 4,  style: '#74c0fc' },
+    ];
+    ctx.lineCap  = 'round';
+    ctx.lineJoin = 'round';
+    for (const { width, style } of passes) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth   = width;
       for (const seg of ROUTE_SEGS) {
         if (seg.length < 2) continue;
         ctx.beginPath();
@@ -258,15 +255,15 @@ export function buildPhotoStoryHtml(
       }
     }
 
-    // Stop dots
+    // Stop dots — dark ring → white ring → blue centre
     for (const [lat, lon] of STOP_COORDS) {
       const cx = scaleX(lon), cy = scaleY(lat);
-      ctx.fillStyle = '#0f2540';
-      ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(2,8,20,0.85)';
+      ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#4dabf7';
-      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
     }
   }
 
@@ -365,12 +362,22 @@ export function buildPhotoStoryHtml(
 
   // ── export ───────────────────────────────────────────────────────────
 
+  let payload;
   try {
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-    window.ReactNativeWebView.postMessage(dataUrl);
+    payload = canvas.toDataURL('image/jpeg', 0.88);
   } catch (err) {
-    window.ReactNativeWebView.postMessage('error:' + String(err));
+    payload = 'error:' + String(err);
   }
+
+  // Poll until the RN WebView bridge is injected — fast renders finish
+  // before the bridge is ready, causing postMessage to silently fail.
+  (function send(retries) {
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(payload);
+    } else if (retries > 0) {
+      setTimeout(() => send(retries - 1), 80);
+    }
+  })(40); // up to ~3.2 s
 })();
 </script>
 </body>
