@@ -9,9 +9,17 @@ export type PhotoCropParams = {
   scale: number; // 1.0 = cover-fit, >1 = zoomed in
 };
 
+export type RoutePosition = { x: number; y: number };
+
+export const DEFAULT_ROUTE_POSITION: RoutePosition = {
+  x: 1080 - 380 - 52, // 648 — upper-right of photo area
+  y: 52,
+};
+
 type StoryOptions = {
   showRoute?: boolean;
   cropParams?: PhotoCropParams[];
+  routePosition?: RoutePosition;
 };
 
 function ser(value: unknown) {
@@ -80,6 +88,9 @@ export function buildPhotoStoryHtml(
 
   const stopCoords: [number, number][] = trip.stops.map((s) => [s.latitude, s.longitude]);
 
+  const mapX = Math.round(options?.routePosition?.x ?? DEFAULT_ROUTE_POSITION.x);
+  const mapY = Math.round(options?.routePosition?.y ?? DEFAULT_ROUTE_POSITION.y);
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -108,7 +119,7 @@ window.runStoryCanvas = async function() {
   const W = 1080, H = 1920;
   const BG = '#0f2540';
 
-  const PHOTO_H = PHOTOS.length ? 1090 : 300;
+  const PHOTO_H = PHOTOS.length ? 850 : 300;
   const INFO_Y  = PHOTO_H;
 
   // ── helpers ──────────────────────────────────────────────────────────
@@ -239,8 +250,8 @@ window.runStoryCanvas = async function() {
 
   if (ROUTE_SEGS.length > 0) {
     const MAP_W = 380, MAP_H = 380, MAP_PAD = 26;
-    const MAP_X = W - MAP_W - 52;
-    const MAP_Y = 52;
+    const MAP_X = ${mapX};
+    const MAP_Y = ${mapY};
 
     let minLat = Infinity, maxLat = -Infinity;
     let minLon = Infinity, maxLon = -Infinity;
@@ -393,7 +404,13 @@ window.runStoryCanvas = async function() {
   // calls before toDataURL reads the backing store (iOS WebKit quirk).
   await new Promise(r => requestAnimationFrame(r));
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  let dataUrl;
+  try {
+    dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  } catch (e) {
+    window.ReactNativeWebView.postMessage('error:canvas_export:' + String(e));
+    return;
+  }
   window.ReactNativeWebView.postMessage(dataUrl);
 };
 </script>

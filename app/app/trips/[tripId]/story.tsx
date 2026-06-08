@@ -1,7 +1,7 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
-
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -32,7 +32,9 @@ import { computeTripStats, formatDistanceKm } from '@/features/trips/trip-stats'
 import type { TripDetail } from '@/features/trips/types';
 import {
   buildPhotoStoryHtml,
+  DEFAULT_ROUTE_POSITION,
   type PhotoCropParams,
+  type RoutePosition,
 } from '@/features/trips/photo-story-renderer';
 
 type PickerMemory = {
@@ -70,6 +72,8 @@ export default function TripStoryScreen() {
   const [cropCurrentIndex, setCropCurrentIndex] = useState(0);
   const [cropParamsAccumulated, setCropParamsAccumulated] = useState<PhotoCropParams[]>([]);
   const [isCropOpen, setIsCropOpen] = useState(false);
+
+  const [routePosition, setRoutePosition] = useState<RoutePosition>(DEFAULT_ROUTE_POSITION);
 
   const loadStory = useCallback(async () => {
     setIsLoading(true);
@@ -129,6 +133,20 @@ export default function TripStoryScreen() {
     }, [loadStory]),
   );
 
+  // Safety net: if canvas never responds, reset after 30 s to unblock the UI
+  useEffect(() => {
+    if (!isGeneratingPhotoStory) return;
+    const timer = setTimeout(() => {
+      setIsGeneratingPhotoStory(false);
+      setPhotoStoryHtml(null);
+      Alert.alert(
+        'Story timed out',
+        'The story took too long to generate. Try with fewer or smaller photos.',
+      );
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [isGeneratingPhotoStory]);
+
   const handleShare = useCallback(async () => {
     if (!trip) return;
 
@@ -175,20 +193,20 @@ export default function TripStoryScreen() {
     if (allMemories.length === 0) {
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition }));
       return;
     }
 
     setPickerMemories(allMemories);
     setIsPhotoPickerOpen(true);
-  }, [isGeneratingPhotoStory, legRoutes, showRoute, trip]);
+  }, [isGeneratingPhotoStory, legRoutes, routePosition, showRoute, trip]);
 
   const handleShareCardAsImage = useCallback(() => {
     if (!trip || isGeneratingPhotoStory) return;
     setIsGeneratingPhotoStory(true);
     const stats = computeTripStats(trip, legRoutes);
-    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
-  }, [isGeneratingPhotoStory, legRoutes, showRoute, trip]);
+    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition }));
+  }, [isGeneratingPhotoStory, legRoutes, routePosition, showRoute, trip]);
 
   // Called after photo picker confirms URIs — opens crop flow
   const handlePickerConfirm = useCallback((selectedUris: string[]) => {
@@ -197,14 +215,14 @@ export default function TripStoryScreen() {
       if (!trip) return;
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition }));
       return;
     }
     setCropQueue(selectedUris);
     setCropCurrentIndex(0);
     setCropParamsAccumulated([]);
     setIsCropOpen(true);
-  }, [legRoutes, showRoute, trip]);
+  }, [legRoutes, routePosition, showRoute, trip]);
 
   // Generate story after all crops are decided
   // Crop params are passed to the canvas renderer which applies them via coverImage.
@@ -215,20 +233,29 @@ export default function TripStoryScreen() {
     const photoBase64s: string[] = [];
     for (const uri of uris) {
       try {
-        const b64 = await FileSystem.readAsStringAsync(uri, {
+        // Convert to JPEG before encoding — handles HEIC and other iOS-native formats
+        // that can't be decoded as data:image/jpeg inside WKWebView canvas.
+        const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
+          uri, [], { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
+        );
+        const b64 = await FileSystem.readAsStringAsync(jpegUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
         photoBase64s.push(b64);
       } catch {
-        // skip unreadable
+        // skip unreadable / unsupported format
       }
     }
 
     const stats = computeTripStats(trip, legRoutes);
     setPhotoStoryHtml(
-      buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, { showRoute, cropParams: params }),
+      buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, {
+        showRoute,
+        cropParams: params,
+        routePosition,
+      }),
     );
-  }, [legRoutes, showRoute, trip]);
+  }, [legRoutes, routePosition, showRoute, trip]);
 
   const handleCropConfirm = useCallback((params: PhotoCropParams) => {
     const newParams = [...cropParamsAccumulated, params];
@@ -325,6 +352,14 @@ export default function TripStoryScreen() {
         <View style={styles.cardWrap}>
           <TripStoryCard trip={trip} legRoutes={legRoutes} />
         </View>
+
+        {showRoute ? (
+          <RoutePositionPicker
+            routePosition={routePosition}
+            onPositionChange={setRoutePosition}
+            onReset={() => setRoutePosition(DEFAULT_ROUTE_POSITION)}
+          />
+        ) : null}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -647,6 +682,74 @@ function CropModal({
   );
 }
 
+// ── Route position picker ─────────────────────────────────────────────────────
+
+const CANVAS_W = 1080;
+const CANVAS_H = 1920;
+const MAP_SIZE = 380;
+const PREV_SCALE = 135 / CANVAS_W; // ≈ 0.125 — each canvas pixel = 0.125 preview pixels
+const PREV_W = 135;
+const PREV_H = Math.round(CANVAS_H * PREV_SCALE); // 240
+const IND_SIZE = Math.round(MAP_SIZE * PREV_SCALE); // 48
+const PHOTO_AREA_PREV_H = Math.round(850 * PREV_SCALE); // 106 — tint height for photo zone
+
+function RoutePositionPicker({
+  routePosition,
+  onPositionChange,
+  onReset,
+}: {
+  routePosition: RoutePosition;
+  onPositionChange(pos: RoutePosition): void;
+  onReset(): void;
+}) {
+  const posRef = useRef(routePosition);
+  posRef.current = routePosition;
+  const basePos = useRef<RoutePosition>({ x: 0, y: 0 });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        basePos.current = posRef.current;
+      },
+      onPanResponderMove: (_, g) => {
+        const newX = Math.round(
+          Math.max(0, Math.min(CANVAS_W - MAP_SIZE, basePos.current.x + g.dx / PREV_SCALE)),
+        );
+        const newY = Math.round(
+          Math.max(0, Math.min(CANVAS_H - MAP_SIZE, basePos.current.y + g.dy / PREV_SCALE)),
+        );
+        onPositionChange({ x: newX, y: newY });
+      },
+    }),
+  ).current;
+
+  const indLeft = routePosition.x * PREV_SCALE;
+  const indTop = routePosition.y * PREV_SCALE;
+
+  return (
+    <View style={rpStyles.container}>
+      <View style={rpStyles.titleRow}>
+        <Text style={rpStyles.label}>Route position</Text>
+        <Pressable onPress={onReset} hitSlop={8}>
+          <Text style={rpStyles.resetText}>Reset</Text>
+        </Pressable>
+      </View>
+      <Text style={rpStyles.hint}>Drag the blue box to reposition the route drawing on your story</Text>
+      <View style={[rpStyles.preview, { width: PREV_W, height: PREV_H }]}>
+        <View style={[rpStyles.photoAreaTint, { height: PHOTO_AREA_PREV_H }]} />
+        <View
+          style={[rpStyles.indicator, { width: IND_SIZE, height: IND_SIZE, left: indLeft, top: indTop }]}
+          {...panResponder.panHandlers}
+        >
+          <Ionicons name="map-outline" size={Math.round(IND_SIZE * 0.55)} color="#74c0fc" />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -932,4 +1035,55 @@ const cropStyles = StyleSheet.create({
     backgroundColor: TravelColors.primary,
   },
   confirmText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+});
+
+const rpStyles = StyleSheet.create({
+  container: {
+    width: '100%',
+    gap: 6,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  label: {
+    color: TravelColors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  resetText: {
+    color: TravelColors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  hint: {
+    color: TravelColors.mutedText,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  preview: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#0d1e35',
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    position: 'relative',
+  },
+  photoAreaTint: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  indicator: {
+    position: 'absolute',
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: 'rgba(116,192,252,0.7)',
+    backgroundColor: 'rgba(116,192,252,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
