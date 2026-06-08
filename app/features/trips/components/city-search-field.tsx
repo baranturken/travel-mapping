@@ -150,6 +150,9 @@ export function CitySearchField({ value, errorMessage, onSelect, onManualSave }:
 
           <TextInput
             autoFocus
+            autoCorrect={false}
+            spellCheck={false}
+            autoCapitalize="words"
             style={styles.searchInput}
             value={query}
             onChangeText={setQuery}

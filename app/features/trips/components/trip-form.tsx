@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { TravelColors } from '@/constants/theme';
 import { toCreateTripInput } from '@/features/trips/mappers';
@@ -360,6 +360,9 @@ export function TripForm({
                   onChangeText={onChange}
                   onBlur={onBlur}
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                  maxLength={10}
                 />
               )}
             />

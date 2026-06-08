@@ -37,8 +37,7 @@ export function LegListEditor({
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Transport between stops</Text>
       <Text style={styles.sectionBody}>
-        Each gap in the itinerary gets one transport choice. Straight lines stay deterministic in
-        this MVP.
+        Each gap in the itinerary gets one transport choice. The route between stops is drawn automatically based on the transport type.
       </Text>
 
       <View style={styles.returnCard}>

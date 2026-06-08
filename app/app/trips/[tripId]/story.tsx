@@ -1,4 +1,4 @@
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -224,7 +224,7 @@ export default function TripStoryScreen() {
     setCropCurrentIndex(0);
     setCropParamsAccumulated([]);
     setIsCropOpen(true);
-  }, [legRoutes, routePosition, showRoute, trip]);
+  }, [legRoutes, routePosition, showRoute, storyTemplate, trip]);
 
   // Generate story after all crops are decided
   // Crop params are passed to the canvas renderer which applies them via coverImage.
@@ -349,6 +349,7 @@ export default function TripStoryScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <Stack.Screen options={{ title: trip.title }} />
       <ScrollView contentContainerStyle={styles.content}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={18} color={TravelColors.primary} />
@@ -377,6 +378,11 @@ export default function TripStoryScreen() {
                 key={t}
                 style={[styles.templateChip, storyTemplate === t && styles.templateChipActive]}
                 onPress={() => setStoryTemplate(t)}>
+                <Ionicons
+                  name={t === 'navy' ? 'albums-outline' : t === 'journey' ? 'map-outline' : 'film-outline'}
+                  size={13}
+                  color={storyTemplate === t ? '#ffffff' : TravelColors.primary}
+                />
                 <Text style={[styles.templateChipText, storyTemplate === t && styles.templateChipTextActive]}>
                   {t === 'navy' ? 'Classic' : t === 'journey' ? 'Journey' : 'Film'}
                 </Text>
@@ -952,6 +958,9 @@ const styles = StyleSheet.create({
     backgroundColor: TravelColors.tintSurface,
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   templateChipActive: {
     backgroundColor: TravelColors.primary,

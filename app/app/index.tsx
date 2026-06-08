@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
-import { formatTripUpdatedAt } from '@/features/trips/mappers';
+import { formatTripDateRange, formatTripUpdatedAt } from '@/features/trips/mappers';
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
 import type { TripListItem } from '@/features/trips/types';
 
@@ -112,7 +112,7 @@ export default function TripsHomeScreen() {
               {trips.map((trip) => (
                 <Pressable
                   key={trip.id}
-                  style={styles.tripCard}
+                  style={({ pressed }) => [styles.tripCard, pressed && styles.tripCardPressed]}
                   onPress={() =>
                     router.push({
                       pathname: '/trips/[tripId]',
@@ -127,7 +127,12 @@ export default function TripsHomeScreen() {
                     {trip.firstStopLabel} → {trip.lastStopLabel}
                   </Text>
                   <View style={styles.tripMetaRow}>
-                    <Text style={styles.tripMeta}>{trip.stopCount} {trip.stopCount === 1 ? 'stop' : 'stops'}</Text>
+                    <View style={styles.tripMetaLeft}>
+                      <Text style={styles.tripMeta}>{trip.stopCount} {trip.stopCount === 1 ? 'stop' : 'stops'}</Text>
+                      {formatTripDateRange(trip.startDate, trip.endDate) ? (
+                        <Text style={styles.tripDate}>{formatTripDateRange(trip.startDate, trip.endDate)}</Text>
+                      ) : null}
+                    </View>
                     <Text style={styles.tripMeta}>{formatTripUpdatedAt(trip.updatedAt)}</Text>
                   </View>
                 </Pressable>
@@ -271,6 +276,9 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 10,
   },
+  tripCardPressed: {
+    opacity: 0.75,
+  },
   tripCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -291,11 +299,20 @@ const styles = StyleSheet.create({
   tripMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-end',
     gap: 12,
+  },
+  tripMetaLeft: {
+    gap: 2,
   },
   tripMeta: {
     color: TravelColors.mutedText,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  tripDate: {
+    color: TravelColors.primary,
+    fontSize: 12,
     fontWeight: '600',
   },
 });

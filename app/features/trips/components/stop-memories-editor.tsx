@@ -253,7 +253,7 @@ export function StopMemoriesEditor({
                   key={field.id}
                   style={[styles.thumbButton, isSelected && styles.thumbButtonSelected]}
                   onPress={() => setSelectedMemoryIndex(memoryIndex)}>
-                  <Image source={{ uri: memory.imageUri }} style={styles.thumbImage} />
+                  <Image source={{ uri: memory.imageUri }} style={[styles.thumbImage, isSelected && styles.thumbImageSelected]} />
                   <Text style={[styles.thumbLabel, isSelected && styles.thumbLabelSelected]}>
                     {memoryIndex + 1}
                   </Text>
@@ -395,6 +395,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
     backgroundColor: '#dfeaf5',
+  },
+  thumbImageSelected: {
+    borderColor: TravelColors.primary,
   },
   thumbLabel: {
     color: TravelColors.secondaryText,
