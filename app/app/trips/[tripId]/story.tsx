@@ -709,7 +709,10 @@ function RoutePositionPicker({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      // Capture phase: claim the touch before ScrollView can intercept it
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: () => {
         basePos.current = posRef.current;
       },
@@ -725,8 +728,9 @@ function RoutePositionPicker({
     }),
   ).current;
 
-  const indLeft = routePosition.x * PREV_SCALE;
-  const indTop = routePosition.y * PREV_SCALE;
+  // Clamp display coords so indicator is always fully visible within preview bounds
+  const indLeft = Math.max(0, Math.min(PREV_W - IND_SIZE, routePosition.x * PREV_SCALE));
+  const indTop = Math.max(0, Math.min(PREV_H - IND_SIZE, routePosition.y * PREV_SCALE));
 
   return (
     <View style={rpStyles.container}>
@@ -1080,9 +1084,9 @@ const rpStyles = StyleSheet.create({
   indicator: {
     position: 'absolute',
     borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: 'rgba(116,192,252,0.7)',
-    backgroundColor: 'rgba(116,192,252,0.12)',
+    borderWidth: 2,
+    borderColor: '#74c0fc',
+    backgroundColor: 'rgba(116,192,252,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -68,23 +68,25 @@ export function buildPhotoStoryHtml(
     };
   });
 
+  type RouteSegment = { coords: [number, number][]; ferry: boolean };
   const stopById = new Map(trip.stops.map((s) => [s.id, s]));
-  const routeSegments: [number, number][][] = trip.legs
-    .map((leg) => {
+  const routeSegments: RouteSegment[] = trip.legs
+    .map((leg): RouteSegment | null => {
+      const isFerry = leg.transportType === 'ferry';
       const routeData = legRoutes[leg.id];
       if (routeData && routeData.geometry.length >= 2) {
-        return decimateCoords(routeData.geometry as [number, number][], 80);
+        return { coords: decimateCoords(routeData.geometry as [number, number][], 80), ferry: false };
       }
       const from = stopById.get(leg.fromStopId);
       const to = stopById.get(leg.toStopId);
       if (from && to)
-        return [
-          [from.latitude, from.longitude],
-          [to.latitude, to.longitude],
-        ] as [number, number][];
+        return {
+          coords: [[from.latitude, from.longitude], [to.latitude, to.longitude]] as [number, number][],
+          ferry: isFerry,
+        };
       return null;
     })
-    .filter((seg): seg is [number, number][] => seg !== null && seg.length >= 2);
+    .filter((seg): seg is RouteSegment => seg !== null && seg.coords.length >= 2);
 
   const stopCoords: [number, number][] = trip.stops.map((s) => [s.latitude, s.longitude]);
 
@@ -246,76 +248,6 @@ window.runStoryCanvas = async function() {
     ctx.fillRect(0, fadeY, W, fadeH);
   }
 
-  // ── route minimap ────────────────────────────────────────────────────
-
-  if (ROUTE_SEGS.length > 0) {
-    const MAP_W = 380, MAP_H = 380, MAP_PAD = 26;
-    const MAP_X = ${mapX};
-    const MAP_Y = ${mapY};
-
-    let minLat = Infinity, maxLat = -Infinity;
-    let minLon = Infinity, maxLon = -Infinity;
-    for (const seg of ROUTE_SEGS) {
-      for (const [lat, lon] of seg) {
-        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
-        if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
-      }
-    }
-    const latRange = maxLat - minLat || 0.01;
-    const lonRange = maxLon - minLon || 0.01;
-    const innerW = MAP_W - MAP_PAD * 2;
-    const innerH = MAP_H - MAP_PAD * 2;
-    const scaleRaw = Math.min(innerW / lonRange, innerH / latRange);
-    const drawW = lonRange * scaleRaw;
-    const drawH = latRange * scaleRaw;
-    const offX  = MAP_X + MAP_PAD + (innerW - drawW) / 2;
-    const offY  = MAP_Y + MAP_PAD + (innerH - drawH) / 2;
-    const scaleX = (lon) => offX + (lon - minLon) / lonRange * drawW;
-    const scaleY = (lat) => offY + drawH - (lat - minLat) / latRange * drawH;
-
-    // When photos are present: dark/navy route (subtle).
-    // When card-only (no photos): bright blue route.
-    const hasPhotos = valid.length > 0;
-    const routePasses = hasPhotos
-      ? [
-          { width: 12, style: 'rgba(2, 5, 15, 0.9)' },
-          { width: 7,  style: 'rgba(5, 20, 50, 0.7)' },
-          { width: 3,  style: 'rgba(15, 37, 64, 0.95)' },
-        ]
-      : [
-          { width: 12, style: 'rgba(2, 8, 20, 0.85)' },
-          { width: 7,  style: 'rgba(15, 60, 120, 0.6)' },
-          { width: 3,  style: '#74c0fc' },
-        ];
-
-    ctx.lineCap  = 'round';
-    ctx.lineJoin = 'round';
-    for (const { width, style } of routePasses) {
-      ctx.strokeStyle = style;
-      ctx.lineWidth   = width;
-      for (const seg of ROUTE_SEGS) {
-        if (seg.length < 2) continue;
-        ctx.beginPath();
-        ctx.moveTo(scaleX(seg[0][1]), scaleY(seg[0][0]));
-        for (let i = 1; i < seg.length; i++) {
-          ctx.lineTo(scaleX(seg[i][1]), scaleY(seg[i][0]));
-        }
-        ctx.stroke();
-      }
-    }
-
-    const dotFill = hasPhotos ? 'rgba(15,37,64,0.9)' : '#4dabf7';
-    for (const [lat, lon] of STOP_COORDS) {
-      const cx = scaleX(lon), cy = scaleY(lat);
-      ctx.fillStyle = 'rgba(2,8,20,0.85)';
-      ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = dotFill;
-      ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
   // ── info area ────────────────────────────────────────────────────────
 
   ctx.fillStyle = BG;
@@ -398,6 +330,94 @@ window.runStoryCanvas = async function() {
   ctx.textAlign = 'right';
   ctx.fillText('Made with Travel Mapping', W - PAD, H - 72);
   ctx.textAlign = 'left';
+
+  // ── route minimap ────────────────────────────────────────────────────
+  // Drawn last so it always renders on top of the info area background fill.
+
+  if (ROUTE_SEGS.length > 0) {
+    const MAP_W = 380, MAP_H = 380, MAP_PAD = 26;
+    const MAP_X = ${mapX};
+    const MAP_Y = ${mapY};
+
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLon = Infinity, maxLon = -Infinity;
+    for (const seg of ROUTE_SEGS) {
+      for (const [lat, lon] of seg.coords) {
+        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+        if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+      }
+    }
+    const latRange = maxLat - minLat || 0.01;
+    const lonRange = maxLon - minLon || 0.01;
+    const innerW = MAP_W - MAP_PAD * 2;
+    const innerH = MAP_H - MAP_PAD * 2;
+    const scaleRaw = Math.min(innerW / lonRange, innerH / latRange);
+    const drawW = lonRange * scaleRaw;
+    const drawH = latRange * scaleRaw;
+    const offX  = MAP_X + MAP_PAD + (innerW - drawW) / 2;
+    const offY  = MAP_Y + MAP_PAD + (innerH - drawH) / 2;
+    const scaleX = (lon) => offX + (lon - minLon) / lonRange * drawW;
+    const scaleY = (lat) => offY + drawH - (lat - minLat) / latRange * drawH;
+
+    // When photos are present: dark/navy route (subtle).
+    // When card-only (no photos): bright blue route.
+    const hasPhotos = valid.length > 0;
+    const routePasses = hasPhotos
+      ? [
+          { width: 12, style: 'rgba(2, 5, 15, 0.9)' },
+          { width: 7,  style: 'rgba(5, 20, 50, 0.7)' },
+          { width: 3,  style: 'rgba(15, 37, 64, 0.95)' },
+        ]
+      : [
+          { width: 12, style: 'rgba(2, 8, 20, 0.85)' },
+          { width: 7,  style: 'rgba(15, 60, 120, 0.6)' },
+          { width: 3,  style: '#74c0fc' },
+        ];
+
+    ctx.lineCap  = 'round';
+    ctx.lineJoin = 'round';
+    for (const { width, style } of routePasses) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth   = width;
+      for (const seg of ROUTE_SEGS) {
+        if (seg.coords.length < 2) continue;
+        if (seg.ferry && seg.coords.length === 2) {
+          // Ferry = dashed arc over water; control point perpendicular to chord
+          const x1 = scaleX(seg.coords[0][1]), y1 = scaleY(seg.coords[0][0]);
+          const x2 = scaleX(seg.coords[1][1]), y2 = scaleY(seg.coords[1][0]);
+          const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+          const dx = x2 - x1, dy = y2 - y1;
+          const cpx = mx - dy * 0.28;
+          const cpy = my + dx * 0.28;
+          const dash = Math.max(4, width * 2);
+          ctx.setLineDash([dash, dash]);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(scaleX(seg.coords[0][1]), scaleY(seg.coords[0][0]));
+          for (let i = 1; i < seg.coords.length; i++) {
+            ctx.lineTo(scaleX(seg.coords[i][1]), scaleY(seg.coords[i][0]));
+          }
+          ctx.stroke();
+        }
+      }
+    }
+
+    const dotFill = hasPhotos ? 'rgba(15,37,64,0.9)' : '#4dabf7';
+    for (const [lat, lon] of STOP_COORDS) {
+      const cx = scaleX(lon), cy = scaleY(lat);
+      ctx.fillStyle = 'rgba(2,8,20,0.85)';
+      ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = dotFill;
+      ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
 
   // ── export ───────────────────────────────────────────────────────────
   // Single rAF flush ensures iOS canvas compositor has committed all draw
