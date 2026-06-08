@@ -33,6 +33,7 @@ export function buildLeafletHtml(
         latitude: stop.latitude,
         longitude: stop.longitude,
         placeTitles: stop.places.slice(0, 3).map((place) => place.title),
+        extraPlaceCount: Math.max(0, stop.places.length - 3),
         accommodationLabel: accommodation?.label ?? null,
         accommodationEmoji: accommodation?.emoji ?? null,
         accommodationNote: stop.accommodationNote,
@@ -234,7 +235,10 @@ export function buildLeafletHtml(
         if (stop.stayLabel) popupHtml += '<br/>' + escapeHtml(stop.stayLabel);
         if (stop.accommodationLabel) popupHtml += '<br/>' + escapeHtml(stop.accommodationEmoji + ' ' + stop.accommodationLabel);
         if (stop.accommodationNote) popupHtml += '<br/><small>' + escapeHtml(stop.accommodationNote) + '</small>';
-        if (stop.placeTitles.length) popupHtml += '<br/>📍 ' + escapeHtml(stop.placeTitles.join(', '));
+        if (stop.placeTitles.length) {
+          popupHtml += '<br/>📍 ' + escapeHtml(stop.placeTitles.join(', '));
+          if (stop.extraPlaceCount > 0) popupHtml += ' <small>+' + stop.extraPlaceCount + ' more</small>';
+        }
         if (stop.memoryCount) popupHtml += '<br/>📷 ' + stop.memoryCount + ' photo' + (stop.memoryCount > 1 ? 's' : '');
 
         marker.bindPopup(popupHtml);
