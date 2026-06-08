@@ -64,7 +64,7 @@ export function computeTripStats(
 
 export function formatDistanceKm(km: number): string {
   if (km >= 1000) {
-    return `${(km / 1000).toFixed(1)}k km`;
+    return `${km.toLocaleString('en-US', { maximumFractionDigits: 0 })} km`;
   }
   return `${km} km`;
 }
