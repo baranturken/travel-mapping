@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { TravelColors } from '@/constants/theme';
 import { toCreateTripInput } from '@/features/trips/mappers';
@@ -50,8 +50,8 @@ const defaultValues: CreateTripFormValues = {
 
 export function TripForm({
   eyebrow = 'Create trip',
-  title = 'Build the itinerary first, then open it on the map.',
-  description = 'Start simple: title, stops, transport, and map coordinates. You can add auth and sync later without changing this local trip structure.',
+  title = 'Build your itinerary.',
+  description = 'Add a title, your stops in order, and the transport between each one. Everything is saved locally on your device.',
   submitLabel = 'Save trip',
   initialValues,
   isSubmitting = false,
@@ -424,6 +424,7 @@ export function TripForm({
         style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
         disabled={isSubmitting}
         onPress={handleSubmit(submitForm, handleInvalidSubmit)}>
+        {isSubmitting ? <ActivityIndicator size="small" color="#ffffff" /> : null}
         <Text style={styles.submitButtonText}>
           {isSubmitting ? 'Saving trip…' : submitLabel}
         </Text>
@@ -514,8 +515,10 @@ const styles = StyleSheet.create({
     backgroundColor: TravelColors.primary,
     borderRadius: 999,
     paddingVertical: 16,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   submitButtonDisabled: {
     opacity: 0.7,

@@ -224,46 +224,50 @@ export default function TripDetailScreen() {
               </View>
             ) : null}
           </View>
-          <Pressable
-            style={styles.editButton}
-            disabled={isDeleting || isDuplicating}
-            onPress={() =>
-              router.push({
-                pathname: '/trips/[tripId]/edit',
-                params: { tripId: trip.id },
-              })
-            }>
-            <Ionicons name="create-outline" size={16} color={TravelColors.primary} />
-            <Text style={styles.editButtonText}>Edit trip</Text>
-          </Pressable>
-          <Pressable
-            style={styles.editButton}
-            disabled={isDeleting || isDuplicating}
-            onPress={() =>
-              router.push({
-                pathname: '/trips/[tripId]/story',
-                params: { tripId: trip.id },
-              })
-            }>
-            <Ionicons name="share-outline" size={16} color={TravelColors.primary} />
-            <Text style={styles.editButtonText}>Share trip story</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.duplicateButton, isDuplicating && styles.duplicateButtonDisabled]}
-            disabled={isDeleting || isDuplicating}
-            onPress={() => void handleDuplicateTrip()}>
-            <Ionicons name="copy-outline" size={16} color={TravelColors.primary} />
-            <Text style={styles.duplicateButtonText}>
-              {isDuplicating ? 'Duplicating…' : 'Duplicate trip'}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
-            disabled={isDeleting || isDuplicating}
-            onPress={handleDeleteTrip}>
-            <Ionicons name="trash-outline" size={16} color={TravelColors.danger} />
-            <Text style={styles.deleteButtonText}>{isDeleting ? 'Deleting…' : 'Delete trip'}</Text>
-          </Pressable>
+          <View style={styles.primaryActions}>
+            <Pressable
+              style={[styles.primaryActionButton, styles.primaryActionButtonFill]}
+              disabled={isDeleting || isDuplicating}
+              onPress={() =>
+                router.push({
+                  pathname: '/trips/[tripId]/story',
+                  params: { tripId: trip.id },
+                })
+              }>
+              <Ionicons name="share-outline" size={16} color="#ffffff" />
+              <Text style={styles.primaryActionButtonFillText}>Share story</Text>
+            </Pressable>
+            <Pressable
+              style={styles.primaryActionButton}
+              disabled={isDeleting || isDuplicating}
+              onPress={() =>
+                router.push({
+                  pathname: '/trips/[tripId]/edit',
+                  params: { tripId: trip.id },
+                })
+              }>
+              <Ionicons name="create-outline" size={16} color={TravelColors.primary} />
+              <Text style={styles.primaryActionButtonText}>Edit trip</Text>
+            </Pressable>
+          </View>
+          <View style={styles.secondaryActions}>
+            <Pressable
+              style={[styles.secondaryActionButton, (isDeleting || isDuplicating) && styles.secondaryActionButtonDisabled]}
+              disabled={isDeleting || isDuplicating}
+              onPress={() => void handleDuplicateTrip()}>
+              <Ionicons name="copy-outline" size={14} color={TravelColors.mutedText} />
+              <Text style={styles.secondaryActionButtonText}>
+                {isDuplicating ? 'Duplicating…' : 'Duplicate'}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.secondaryActionButton, styles.deleteActionButton, (isDeleting || isDuplicating) && styles.secondaryActionButtonDisabled]}
+              disabled={isDeleting || isDuplicating}
+              onPress={handleDeleteTrip}>
+              <Ionicons name="trash-outline" size={14} color={TravelColors.danger} />
+              <Text style={styles.deleteActionButtonText}>{isDeleting ? 'Deleting…' : 'Delete'}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <TripMapWebView trip={trip} onRoutesLoaded={setLegRoutes} />
@@ -627,63 +631,69 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  editButton: {
+  primaryActions: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 4,
-    alignSelf: 'flex-start',
+  },
+  primaryActionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     borderRadius: 999,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     backgroundColor: TravelColors.tintSurface,
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
   },
-  editButtonText: {
+  primaryActionButtonFill: {
+    backgroundColor: TravelColors.primary,
+    borderColor: TravelColors.primary,
+  },
+  primaryActionButtonText: {
     color: TravelColors.primary,
     fontSize: 14,
     fontWeight: '700',
   },
-  duplicateButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: TravelColors.surface,
-    borderWidth: 1,
-    borderColor: TravelColors.borderStrong,
-  },
-  duplicateButtonDisabled: {
-    opacity: 0.6,
-  },
-  duplicateButtonText: {
-    color: TravelColors.primary,
+  primaryActionButtonFillText: {
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
   },
-  deleteButton: {
-    alignSelf: 'flex-start',
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: TravelColors.surface,
     borderWidth: 1,
+    borderColor: TravelColors.border,
+  },
+  secondaryActionButtonDisabled: {
+    opacity: 0.5,
+  },
+  secondaryActionButtonText: {
+    color: TravelColors.mutedText,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  deleteActionButton: {
     borderColor: '#efcaca',
+    backgroundColor: '#fff9f9',
   },
-  deleteButtonDisabled: {
-    opacity: 0.6,
-  },
-  deleteButtonText: {
+  deleteActionButtonText: {
     color: TravelColors.danger,
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
   },
   sectionCard: {
     backgroundColor: TravelColors.surface,

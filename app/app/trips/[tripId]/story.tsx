@@ -35,6 +35,7 @@ import {
   DEFAULT_ROUTE_POSITION,
   type PhotoCropParams,
   type RoutePosition,
+  type StoryTemplate,
 } from '@/features/trips/photo-story-renderer';
 
 type PickerMemory = {
@@ -74,6 +75,7 @@ export default function TripStoryScreen() {
   const [isCropOpen, setIsCropOpen] = useState(false);
 
   const [routePosition, setRoutePosition] = useState<RoutePosition>(DEFAULT_ROUTE_POSITION);
+  const [storyTemplate, setStoryTemplate] = useState<StoryTemplate>('navy');
 
   const loadStory = useCallback(async () => {
     setIsLoading(true);
@@ -193,20 +195,20 @@ export default function TripStoryScreen() {
     if (allMemories.length === 0) {
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition }));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate }));
       return;
     }
 
     setPickerMemories(allMemories);
     setIsPhotoPickerOpen(true);
-  }, [isGeneratingPhotoStory, legRoutes, routePosition, showRoute, trip]);
+  }, [isGeneratingPhotoStory, legRoutes, routePosition, showRoute, storyTemplate, trip]);
 
   const handleShareCardAsImage = useCallback(() => {
     if (!trip || isGeneratingPhotoStory) return;
     setIsGeneratingPhotoStory(true);
     const stats = computeTripStats(trip, legRoutes);
-    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition }));
-  }, [isGeneratingPhotoStory, legRoutes, routePosition, showRoute, trip]);
+    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate }));
+  }, [isGeneratingPhotoStory, legRoutes, routePosition, showRoute, storyTemplate, trip]);
 
   // Called after photo picker confirms URIs — opens crop flow
   const handlePickerConfirm = useCallback((selectedUris: string[]) => {
@@ -215,7 +217,7 @@ export default function TripStoryScreen() {
       if (!trip) return;
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition }));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate }));
       return;
     }
     setCropQueue(selectedUris);
@@ -233,10 +235,13 @@ export default function TripStoryScreen() {
     const photoBase64s: string[] = [];
     for (const uri of uris) {
       try {
-        // Convert to JPEG before encoding — handles HEIC and other iOS-native formats
-        // that can't be decoded as data:image/jpeg inside WKWebView canvas.
+        // Resize to ≤1080px wide before encoding. iOS camera photos can be 12MP+,
+        // turning a 2-photo story into a 20MB+ HTML string that overwhelms WKWebView.
+        // The canvas is only 1080px wide, so anything larger is pure overhead.
         const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
-          uri, [], { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
+          uri,
+          [{ resize: { width: 1080 } }],
+          { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
         );
         const b64 = await FileSystem.readAsStringAsync(jpegUri, {
           encoding: FileSystem.EncodingType.Base64,
@@ -253,9 +258,10 @@ export default function TripStoryScreen() {
         showRoute,
         cropParams: params,
         routePosition,
+        template: storyTemplate,
       }),
     );
-  }, [legRoutes, routePosition, showRoute, trip]);
+  }, [legRoutes, routePosition, showRoute, storyTemplate, trip]);
 
   const handleCropConfirm = useCallback((params: PhotoCropParams) => {
     const newParams = [...cropParamsAccumulated, params];
@@ -353,7 +359,7 @@ export default function TripStoryScreen() {
           <TripStoryCard trip={trip} legRoutes={legRoutes} />
         </View>
 
-        {showRoute ? (
+        {showRoute && storyTemplate === 'navy' ? (
           <RoutePositionPicker
             routePosition={routePosition}
             onPositionChange={setRoutePosition}
@@ -363,6 +369,22 @@ export default function TripStoryScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
+        <View style={styles.templateRow}>
+          <Text style={styles.routeToggleLabel}>Story template</Text>
+          <View style={styles.templateChips}>
+            {(['navy', 'journey', 'filmstrip'] as StoryTemplate[]).map((t) => (
+              <Pressable
+                key={t}
+                style={[styles.templateChip, storyTemplate === t && styles.templateChipActive]}
+                onPress={() => setStoryTemplate(t)}>
+                <Text style={[styles.templateChipText, storyTemplate === t && styles.templateChipTextActive]}>
+                  {t === 'navy' ? 'Classic' : t === 'journey' ? 'Journey' : 'Film'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
         <View style={styles.routeToggleRow}>
           <Text style={styles.routeToggleLabel}>Include route drawing</Text>
           <Pressable
@@ -378,7 +400,11 @@ export default function TripStoryScreen() {
           style={[styles.photoStoryButton, isGeneratingPhotoStory && styles.buttonDisabled]}
           disabled={isGeneratingPhotoStory}
           onPress={handleOpenPhotoPicker}>
-          <Ionicons name="images-outline" size={18} color={TravelColors.primary} />
+          {isGeneratingPhotoStory ? (
+            <ActivityIndicator size="small" color={TravelColors.primary} />
+          ) : (
+            <Ionicons name="images-outline" size={18} color={TravelColors.primary} />
+          )}
           <Text style={styles.photoStoryButtonText}>
             {isGeneratingPhotoStory ? 'Building story…' : 'Share as photo story'}
           </Text>
@@ -387,7 +413,11 @@ export default function TripStoryScreen() {
           style={[styles.cardImageButton, isGeneratingPhotoStory && styles.buttonDisabled]}
           disabled={isGeneratingPhotoStory}
           onPress={handleShareCardAsImage}>
-          <Ionicons name="card-outline" size={18} color={TravelColors.primary} />
+          {isGeneratingPhotoStory ? (
+            <ActivityIndicator size="small" color={TravelColors.primary} />
+          ) : (
+            <Ionicons name="card-outline" size={18} color={TravelColors.primary} />
+          )}
           <Text style={styles.cardImageButtonText}>Share story card</Text>
         </Pressable>
         <Pressable style={styles.shareButton} onPress={() => void handleShare()}>
@@ -548,7 +578,8 @@ function CropModal({
   const cropRef = useRef(cropState);
   cropRef.current = cropState;
   const overflowRef = useRef({ x: 0, y: 0 });
-  const baseNorm = useRef({ x: 0, y: 0 });
+  const panBase = useRef({ normX: 0, normY: 0, gDx: 0, gDy: 0 });
+  const pinchRef = useRef<{ baseDist: number; baseScale: number } | null>(null);
 
   useEffect(() => {
     setCropState({ normX: 0, normY: 0, scale: 1 });
@@ -572,18 +603,59 @@ function CropModal({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        baseNorm.current = { x: cropRef.current.normX, y: cropRef.current.normY };
+      onPanResponderGrant: (evt) => {
+        pinchRef.current = null;
+        panBase.current = {
+          normX: cropRef.current.normX,
+          normY: cropRef.current.normY,
+          gDx: 0,
+          gDy: 0,
+        };
+        // If gesture starts with 2 fingers, initialise pinch immediately
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          const dist = Math.hypot(
+            touches[0].pageX - touches[1].pageX,
+            touches[0].pageY - touches[1].pageY,
+          );
+          pinchRef.current = { baseDist: dist, baseScale: cropRef.current.scale };
+        }
       },
-      onPanResponderMove: (_, g) => {
-        const ox = overflowRef.current.x;
-        const oy = overflowRef.current.y;
-        setCropState((prev) => ({
-          ...prev,
-          normX: ox > 0 ? Math.max(-0.5, Math.min(0.5, baseNorm.current.x + g.dx / ox)) : 0,
-          normY: oy > 0 ? Math.max(-0.5, Math.min(0.5, baseNorm.current.y + g.dy / oy)) : 0,
-        }));
+      onPanResponderMove: (evt, g) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          const dist = Math.hypot(
+            touches[0].pageX - touches[1].pageX,
+            touches[0].pageY - touches[1].pageY,
+          );
+          if (!pinchRef.current) {
+            // Second finger added mid-gesture — start pinch from current state
+            pinchRef.current = { baseDist: dist, baseScale: cropRef.current.scale };
+            panBase.current = { normX: cropRef.current.normX, normY: cropRef.current.normY, gDx: g.dx, gDy: g.dy };
+          } else {
+            const newScale = Math.max(1, Math.min(3, pinchRef.current.baseScale * (dist / pinchRef.current.baseDist)));
+            setCropState((prev) => ({ ...prev, scale: newScale, normX: 0, normY: 0 }));
+          }
+        } else {
+          if (pinchRef.current) {
+            // Finger lifted — reset pan base from current position so there's no jump
+            pinchRef.current = null;
+            panBase.current = { normX: cropRef.current.normX, normY: cropRef.current.normY, gDx: g.dx, gDy: g.dy };
+            return;
+          }
+          const ox = overflowRef.current.x;
+          const oy = overflowRef.current.y;
+          const rdx = g.dx - panBase.current.gDx;
+          const rdy = g.dy - panBase.current.gDy;
+          setCropState((prev) => ({
+            ...prev,
+            normX: ox > 0 ? Math.max(-0.5, Math.min(0.5, panBase.current.normX + rdx / ox)) : 0,
+            normY: oy > 0 ? Math.max(-0.5, Math.min(0.5, panBase.current.normY + rdy / oy)) : 0,
+          }));
+        }
       },
+      onPanResponderRelease: () => { pinchRef.current = null; },
+      onPanResponderTerminate: () => { pinchRef.current = null; },
     }),
   ).current;
 
@@ -618,7 +690,7 @@ function CropModal({
           <View style={cropStyles.header}>
             <View style={cropStyles.headerCopy}>
               <Text style={cropStyles.title}>Crop photo {photoNumber} of {totalPhotos}</Text>
-              <Text style={cropStyles.subtitle}>Drag to reposition · +/− to zoom</Text>
+              <Text style={cropStyles.subtitle}>Drag to reposition · Pinch or +/− to zoom</Text>
             </View>
             {totalPhotos > 1 ? (
               <Pressable onPress={onSkipAll}>
@@ -862,6 +934,37 @@ const styles = StyleSheet.create({
   shareButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
   hiddenRenderer: { position: 'absolute', left: -1200, top: -2100, width: 1080, height: 1920 },
   hiddenWebView: { flex: 1 },
+  templateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  templateChips: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  templateChip: {
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  templateChipActive: {
+    backgroundColor: TravelColors.primary,
+    borderColor: TravelColors.primary,
+  },
+  templateChipText: {
+    color: TravelColors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  templateChipTextActive: {
+    color: '#ffffff',
+  },
 });
 
 const pickerStyles = StyleSheet.create({

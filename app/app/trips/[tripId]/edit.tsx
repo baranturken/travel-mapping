@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
@@ -92,7 +92,8 @@ export default function EditTripScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         <View style={styles.stateWrap}>
-          <Text style={styles.stateTitle}>Loading trip…</Text>
+          <ActivityIndicator color={TravelColors.primary} />
+          <Text style={styles.stateBody}>Loading trip…</Text>
         </View>
       </SafeAreaView>
     );
@@ -104,6 +105,9 @@ export default function EditTripScreen() {
         <View style={styles.stateWrap}>
           <Text style={styles.stateTitle}>Could not open trip</Text>
           <Text style={styles.stateBody}>{errorMessage ?? 'Please return to the trips list and try again.'}</Text>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <Text style={styles.backButtonText}>Go back</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -120,8 +124,8 @@ export default function EditTripScreen() {
           keyboardShouldPersistTaps="handled">
           <TripForm
             eyebrow="Edit trip"
-            title="Update the route, then save it back to your map."
-            description="You can change stops, reorder the journey by editing the stop list, and keep the saved trip detail in sync."
+            title="Update your itinerary."
+            description="Change stops, reorder the journey, or update transport between legs. Your changes are saved locally."
             submitLabel="Save changes"
             initialValues={toTripFormValues(trip)}
             isSubmitting={isSaving}
@@ -162,5 +166,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
+  },
+  backButton: {
+    marginTop: 8,
+    backgroundColor: TravelColors.primary,
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  backButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

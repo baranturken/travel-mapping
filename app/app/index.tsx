@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -49,7 +50,16 @@ export default function TripsHomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={() => void loadTrips()}
+            tintColor={TravelColors.primary}
+          />
+        }
+      >
         <View style={styles.heroCard}>
           <Text style={styles.eyebrow}>Travel Mapping</Text>
           <Text style={styles.title}>Build a clean trip story you can read on a map.</Text>
