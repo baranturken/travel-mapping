@@ -383,6 +383,9 @@ export function TripForm({
                   onChangeText={onChange}
                   onBlur={onBlur}
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                  maxLength={10}
                 />
               )}
             />
