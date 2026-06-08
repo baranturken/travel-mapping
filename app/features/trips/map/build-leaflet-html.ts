@@ -195,9 +195,14 @@ export function buildLeafletHtml(
           lineCap: 'round',
         }).addTo(map);
 
-        // Transport chip at midpoint
-        const midIndex = Math.floor(points.length / 2);
-        const midpoint = points[midIndex];
+        // Transport chip at the true geometric midpoint of the polyline
+        let midpoint;
+        if (points.length <= 2) {
+          const p0 = points[0], p1 = points[points.length - 1];
+          midpoint = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+        } else {
+          midpoint = points[Math.floor(points.length / 2)];
+        }
 
         L.marker(midpoint, {
           icon: L.divIcon({
