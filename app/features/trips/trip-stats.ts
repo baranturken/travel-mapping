@@ -73,8 +73,8 @@ export function formatLegDistance(distanceMeters: number | null): string | null 
   if (distanceMeters === null) return null;
   const km = distanceMeters / 1000;
   if (km < 1) return `${Math.round(distanceMeters)} m`;
-  if (km >= 1000) return `${(km / 1000).toFixed(1)}k km`;
-  return `${Math.round(km)} km`;
+  const rounded = Math.round(km);
+  return `${rounded.toLocaleString('en-US', { maximumFractionDigits: 0 })} km`;
 }
 
 export function formatLegDuration(durationSeconds: number | null): string | null {

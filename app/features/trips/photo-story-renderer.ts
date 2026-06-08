@@ -308,7 +308,14 @@ window.runStoryCanvas = async function() {
     ctx.font = 'bold 86px sans-serif';
     ctx.fillStyle = '#ffffff';
     const titleLines = wrapText(TITLE, PAD, y + 84, W - PAD * 2, 100, 2);
-    y += 84 + titleLines * 100 + 28;
+    y += 84 + titleLines * 100 + 20;
+
+    if (DATE_RANGE) {
+      ctx.font = '30px sans-serif';
+      ctx.fillStyle = '#7fb4f0';
+      ctx.fillText('📅 ' + DATE_RANGE, PAD, y);
+      y += 48;
+    }
 
     ctx.font = 'bold 33px sans-serif';
     let sx = PAD;
