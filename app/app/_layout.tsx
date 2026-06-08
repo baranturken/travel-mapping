@@ -74,7 +74,7 @@ export default function RootLayout() {
                 fontWeight: '700',
               },
             }}>
-            <Stack.Screen name="index" options={{ title: 'Trips' }} />
+            <Stack.Screen name="index" options={{ title: 'Travel Mapping' }} />
             <Stack.Screen
               name="trips/new"
               options={{ title: 'Create trip', presentation: 'card' }}

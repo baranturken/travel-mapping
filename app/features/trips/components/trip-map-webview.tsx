@@ -163,28 +163,26 @@ export function TripMapWebView({ trip, onRoutesLoaded }: TripMapWebViewProps) {
         </View>
       )}
 
-      <View style={styles.noticeCard}>
-        <Text style={styles.noticeTitle}>
-          {showFallbackState
-            ? 'Map fallback active'
-            : showSlowLoadNotice
-              ? 'Map still loading'
-              : isRoutingLoading
-                ? 'Fetching routes…'
-                : 'Map note'}
-        </Text>
-        <Text style={styles.noticeBody}>
-          {showFallbackState
-            ? 'The itinerary summary below remains available even if the online map assets fail to load.'
-            : showSlowLoadNotice
-              ? 'The trip is still trying to load map assets. Keep this screen open for a moment before falling back to the itinerary summary.'
-              : isRoutingLoading
-                ? 'Loading real road, rail, and path routes from OpenStreetMap. The map will update automatically when ready.'
-                : 'Routes shown use real road and path data from OpenStreetMap via OSRM. Planes and ferries use straight lines.'}
-        </Text>
-      </View>
+      {(showFallbackState || showSlowLoadNotice || isRoutingLoading) ? (
+        <View style={styles.noticeCard}>
+          <Text style={styles.noticeTitle}>
+            {showFallbackState
+              ? 'Map unavailable'
+              : showSlowLoadNotice
+                ? 'Map still loading'
+                : 'Fetching routes…'}
+          </Text>
+          <Text style={styles.noticeBody}>
+            {showFallbackState
+              ? 'Could not load map tiles. Your trip is still saved — the itinerary summary below remains available.'
+              : showSlowLoadNotice
+                ? 'Map tiles are still loading. Keep this screen open for a moment or check your connection.'
+                : 'Loading real road and path routes from OpenStreetMap. The map updates automatically when ready.'}
+          </Text>
+        </View>
+      ) : null}
 
-      <Text style={styles.attributionText}>Map tiles © OpenStreetMap contributors</Text>
+      <Text style={styles.attributionText}>Map: © OpenStreetMap contributors · Routes: OSRM</Text>
     </View>
   );
 }
