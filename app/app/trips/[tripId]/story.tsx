@@ -356,9 +356,29 @@ export default function TripStoryScreen() {
           <Text style={styles.backButtonText}>Back</Text>
         </Pressable>
 
-        <View style={styles.cardWrap}>
-          <TripStoryCard trip={trip} legRoutes={legRoutes} />
-        </View>
+        {storyTemplate === 'navy' ? (
+          <View style={styles.cardWrap}>
+            <TripStoryCard trip={trip} legRoutes={legRoutes} />
+          </View>
+        ) : (
+          <View style={styles.templatePreviewCard}>
+            <View style={styles.templatePreviewIcon}>
+              <Ionicons
+                name={storyTemplate === 'journey' ? 'map-outline' : 'film-outline'}
+                size={32}
+                color={TravelColors.primary}
+              />
+            </View>
+            <Text style={styles.templatePreviewTitle}>
+              {storyTemplate === 'journey' ? 'Journey' : 'Film Strip'}
+            </Text>
+            <Text style={styles.templatePreviewBody}>
+              {storyTemplate === 'journey'
+                ? 'Full-bleed photo background with a floating route map card and stop list. Best with at least one photo selected.'
+                : 'Vertical film strip on the left with your photos, trip stats and route minimap on the right.'}
+            </Text>
+          </View>
+        )}
 
         {showRoute && storyTemplate === 'navy' ? (
           <RoutePositionPicker
@@ -938,6 +958,37 @@ const styles = StyleSheet.create({
     backgroundColor: TravelColors.primary,
   },
   shareButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  templatePreviewCard: {
+    width: 340,
+    borderRadius: 28,
+    padding: 28,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    alignItems: 'center',
+    gap: 14,
+  },
+  templatePreviewIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+  },
+  templatePreviewTitle: {
+    color: TravelColors.text,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  templatePreviewBody: {
+    color: TravelColors.secondaryText,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
   hiddenRenderer: { position: 'absolute', left: -1200, top: -2100, width: 1080, height: 1920 },
   hiddenWebView: { flex: 1 },
   templateRow: {
