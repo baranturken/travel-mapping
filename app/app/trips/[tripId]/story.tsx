@@ -766,13 +766,11 @@ function CropModal({
 
           <View style={cropStyles.footer}>
             <Pressable style={cropStyles.skipButton} onPress={onSkipThis}>
-              <Text style={cropStyles.skipText}>
-                {photoNumber < totalPhotos ? 'Skip this photo' : 'Skip'}
-              </Text>
+              <Text style={cropStyles.skipText}>No crop</Text>
             </Pressable>
             <Pressable style={cropStyles.confirmButton} onPress={() => onConfirm(cropState)}>
               <Text style={cropStyles.confirmText}>
-                {photoNumber < totalPhotos ? `Next photo →` : 'Create story'}
+                {photoNumber < totalPhotos ? `Next →` : 'Create story'}
               </Text>
             </Pressable>
           </View>

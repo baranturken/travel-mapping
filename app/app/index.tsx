@@ -109,34 +109,35 @@ export default function TripsHomeScreen() {
             </View>
           ) : (
             <View style={styles.tripList}>
-              {trips.map((trip) => (
-                <Pressable
-                  key={trip.id}
-                  style={({ pressed }) => [styles.tripCard, pressed && styles.tripCardPressed]}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/trips/[tripId]',
-                      params: { tripId: trip.id },
-                    })
-                  }>
-                  <View style={styles.tripCardHeader}>
-                    <Text style={styles.tripTitle}>{trip.title}</Text>
-                    <Ionicons name="chevron-forward" size={20} color={TravelColors.mutedText} />
-                  </View>
-                  <Text style={styles.tripRoute}>
-                    {trip.firstStopLabel} → {trip.lastStopLabel}
-                  </Text>
-                  <View style={styles.tripMetaRow}>
-                    <View style={styles.tripMetaLeft}>
-                      <Text style={styles.tripMeta}>{trip.stopCount} {trip.stopCount === 1 ? 'stop' : 'stops'}</Text>
-                      {formatTripDateRange(trip.startDate, trip.endDate) ? (
-                        <Text style={styles.tripDate}>{formatTripDateRange(trip.startDate, trip.endDate)}</Text>
-                      ) : null}
+              {trips.map((trip) => {
+                const dateRange = formatTripDateRange(trip.startDate, trip.endDate);
+                return (
+                  <Pressable
+                    key={trip.id}
+                    style={({ pressed }) => [styles.tripCard, pressed && styles.tripCardPressed]}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/trips/[tripId]',
+                        params: { tripId: trip.id },
+                      })
+                    }>
+                    <View style={styles.tripCardHeader}>
+                      <Text style={styles.tripTitle}>{trip.title}</Text>
+                      <Ionicons name="chevron-forward" size={20} color={TravelColors.mutedText} />
                     </View>
-                    <Text style={styles.tripMeta}>{formatTripUpdatedAt(trip.updatedAt)}</Text>
-                  </View>
-                </Pressable>
-              ))}
+                    <Text style={styles.tripRoute}>
+                      {trip.firstStopLabel} → {trip.lastStopLabel}
+                    </Text>
+                    <View style={styles.tripMetaRow}>
+                      <View style={styles.tripMetaLeft}>
+                        <Text style={styles.tripMeta}>{trip.stopCount} {trip.stopCount === 1 ? 'stop' : 'stops'}</Text>
+                        {dateRange ? <Text style={styles.tripDate}>{dateRange}</Text> : null}
+                      </View>
+                      <Text style={styles.tripMeta}>{formatTripUpdatedAt(trip.updatedAt)}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
         </View>
