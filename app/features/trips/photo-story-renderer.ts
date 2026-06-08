@@ -3,6 +3,17 @@ import type { TripStats } from '@/features/trips/trip-stats';
 import { getTransportDisplay, type TripDetail } from '@/features/trips/types';
 import type { LegRouteData } from '@/features/trips/components/trip-map-webview';
 
+export type PhotoCropParams = {
+  normX: number; // -0.5 = image shifted left (shows right), 0.5 = image shifted right (shows left)
+  normY: number;
+  scale: number; // 1.0 = cover-fit, >1 = zoomed in
+};
+
+type StoryOptions = {
+  showRoute?: boolean;
+  cropParams?: PhotoCropParams[];
+};
+
 function ser(value: unknown) {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
@@ -24,7 +35,11 @@ export function buildPhotoStoryHtml(
   stats: TripStats,
   legRoutes: Record<string, LegRouteData>,
   photoBase64s: string[],
+  options?: StoryOptions,
 ): string {
+  const showRoute = options?.showRoute ?? true;
+  const cropParams = options?.cropParams ?? [];
+
   const statItems: string[] = [
     `🌍 ${stats.countryCount} ${stats.countryCount === 1 ? 'country' : 'countries'}`,
     `📍 ${stats.cityCount} ${stats.cityCount === 1 ? 'city' : 'cities'}`,
@@ -45,7 +60,6 @@ export function buildPhotoStoryHtml(
     };
   });
 
-  // Build simplified route segments for the minimap
   const stopById = new Map(trip.stops.map((s) => [s.id, s]));
   const routeSegments: [number, number][][] = trip.legs
     .map((leg) => {
@@ -78,22 +92,24 @@ export function buildPhotoStoryHtml(
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <script>
-(async function () {
+// This function is called by injectedJavaScript (react-native-webview)
+// AFTER the ReactNativeWebView bridge is injected — never auto-executes.
+window.runStoryCanvas = async function() {
   const PHOTOS  = ${ser(photoBase64s)};
   const TITLE   = ${ser(trip.title)};
   const STATS   = ${ser(statItems)};
   const STOPS   = ${ser(stopEntries)};
-  const ROUTE_SEGS   = ${ser(routeSegments)};
-  const STOP_COORDS  = ${ser(stopCoords)};
+  const ROUTE_SEGS   = ${ser(showRoute ? routeSegments : [])};
+  const STOP_COORDS  = ${ser(showRoute ? stopCoords : [])};
+  const CROP_PARAMS  = ${ser(cropParams)};
 
   const canvas = document.getElementById('c');
   const ctx    = canvas.getContext('2d');
   const W = 1080, H = 1920;
   const BG = '#0f2540';
 
-  const PHOTO_H   = PHOTOS.length ? 1090 : 300;
-  const INFO_Y    = PHOTO_H;
-  const INFO_H    = H - INFO_Y;
+  const PHOTO_H = PHOTOS.length ? 1090 : 300;
+  const INFO_Y  = PHOTO_H;
 
   // ── helpers ──────────────────────────────────────────────────────────
 
@@ -106,11 +122,17 @@ export function buildPhotoStoryHtml(
     ctx.restore();
   }
 
-  function coverImage(img, x, y, w, h) {
-    const scale = Math.max(w / img.width, h / img.height);
-    const dw = img.width  * scale;
-    const dh = img.height * scale;
-    ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  function coverImage(img, x, y, w, h, normX, normY, scale) {
+    normX = normX || 0; normY = normY || 0; scale = scale || 1;
+    const base = Math.max(w / img.width, h / img.height) * scale;
+    const dw = img.width  * base;
+    const dh = img.height * base;
+    const overflowX = dw - w;
+    const overflowY = dh - h;
+    ctx.drawImage(img,
+      x + (w - dw) / 2 + normX * overflowX,
+      y + (h - dh) / 2 + normY * overflowY,
+      dw, dh);
   }
 
   function roundRect(x, y, w, h, r) {
@@ -146,6 +168,11 @@ export function buildPhotoStoryHtml(
     return lines;
   }
 
+  function getCrop(idx) {
+    const c = CROP_PARAMS[idx];
+    return c ? c : { normX: 0, normY: 0, scale: 1 };
+  }
+
   // ── background ───────────────────────────────────────────────────────
 
   ctx.fillStyle = BG;
@@ -155,38 +182,45 @@ export function buildPhotoStoryHtml(
 
   const images = await Promise.all(
     PHOTOS.slice(0, 4).map(
-      b64 => new Promise(resolve => {
+      (b64, origIdx) => new Promise(resolve => {
         const img = new Image();
-        img.onload  = () => resolve(img);
-        img.onerror = () => resolve(null);
+        const timer = setTimeout(() => resolve(null), 12000);
+        img.onload  = () => { clearTimeout(timer); resolve({ img, origIdx }); };
+        img.onerror = () => { clearTimeout(timer); resolve(null); };
         img.src = 'data:image/jpeg;base64,' + b64;
       }),
     ),
   );
-  const valid = images.filter(Boolean);
+  const validEntries = images.filter(Boolean);
+  const valid = validEntries.map(e => e.img);
 
   // ── photo grid ───────────────────────────────────────────────────────
 
   const GAP = 6;
   if (valid.length === 1) {
-    clipRect(0, 0, W, PHOTO_H, () => coverImage(valid[0], 0, 0, W, PHOTO_H));
+    const c = getCrop(validEntries[0].origIdx);
+    clipRect(0, 0, W, PHOTO_H, () => coverImage(valid[0], 0, 0, W, PHOTO_H, c.normX, c.normY, c.scale));
   } else if (valid.length === 2) {
     const hw = (W - GAP) / 2;
-    clipRect(0,      0, hw, PHOTO_H, () => coverImage(valid[0], 0,      0, hw, PHOTO_H));
-    clipRect(hw+GAP, 0, hw, PHOTO_H, () => coverImage(valid[1], hw+GAP, 0, hw, PHOTO_H));
+    const c0 = getCrop(validEntries[0].origIdx), c1 = getCrop(validEntries[1].origIdx);
+    clipRect(0,      0, hw, PHOTO_H, () => coverImage(valid[0], 0,      0, hw, PHOTO_H, c0.normX, c0.normY, c0.scale));
+    clipRect(hw+GAP, 0, hw, PHOTO_H, () => coverImage(valid[1], hw+GAP, 0, hw, PHOTO_H, c1.normX, c1.normY, c1.scale));
   } else if (valid.length === 3) {
     const hw = (W - GAP) / 2;
     const hh = (PHOTO_H - GAP) / 2;
-    clipRect(0,      0,      hw, PHOTO_H, () => coverImage(valid[0], 0,      0,      hw, PHOTO_H));
-    clipRect(hw+GAP, 0,      hw, hh,      () => coverImage(valid[1], hw+GAP, 0,      hw, hh));
-    clipRect(hw+GAP, hh+GAP, hw, hh,      () => coverImage(valid[2], hw+GAP, hh+GAP, hw, hh));
+    const c0 = getCrop(validEntries[0].origIdx), c1 = getCrop(validEntries[1].origIdx), c2 = getCrop(validEntries[2].origIdx);
+    clipRect(0,      0,      hw, PHOTO_H, () => coverImage(valid[0], 0,      0,      hw, PHOTO_H, c0.normX, c0.normY, c0.scale));
+    clipRect(hw+GAP, 0,      hw, hh,      () => coverImage(valid[1], hw+GAP, 0,      hw, hh,      c1.normX, c1.normY, c1.scale));
+    clipRect(hw+GAP, hh+GAP, hw, hh,      () => coverImage(valid[2], hw+GAP, hh+GAP, hw, hh,      c2.normX, c2.normY, c2.scale));
   } else if (valid.length >= 4) {
     const hw = (W - GAP) / 2;
     const hh = (PHOTO_H - GAP) / 2;
-    clipRect(0,      0,      hw, hh, () => coverImage(valid[0], 0,      0,      hw, hh));
-    clipRect(hw+GAP, 0,      hw, hh, () => coverImage(valid[1], hw+GAP, 0,      hw, hh));
-    clipRect(0,      hh+GAP, hw, hh, () => coverImage(valid[2], 0,      hh+GAP, hw, hh));
-    clipRect(hw+GAP, hh+GAP, hw, hh, () => coverImage(valid[3], hw+GAP, hh+GAP, hw, hh));
+    const c0 = getCrop(validEntries[0].origIdx), c1 = getCrop(validEntries[1].origIdx);
+    const c2 = getCrop(validEntries[2].origIdx), c3 = getCrop(validEntries[3].origIdx);
+    clipRect(0,      0,      hw, hh, () => coverImage(valid[0], 0,      0,      hw, hh, c0.normX, c0.normY, c0.scale));
+    clipRect(hw+GAP, 0,      hw, hh, () => coverImage(valid[1], hw+GAP, 0,      hw, hh, c1.normX, c1.normY, c1.scale));
+    clipRect(0,      hh+GAP, hw, hh, () => coverImage(valid[2], 0,      hh+GAP, hw, hh, c2.normX, c2.normY, c2.scale));
+    clipRect(hw+GAP, hh+GAP, hw, hh, () => coverImage(valid[3], hw+GAP, hh+GAP, hw, hh, c3.normX, c3.normY, c3.scale));
   }
 
   // ── photo → info gradient ────────────────────────────────────────────
@@ -204,11 +238,10 @@ export function buildPhotoStoryHtml(
   // ── route minimap ────────────────────────────────────────────────────
 
   if (ROUTE_SEGS.length > 0) {
-    const MAP_W = 310, MAP_H = 310, MAP_PAD = 24;
+    const MAP_W = 380, MAP_H = 380, MAP_PAD = 26;
     const MAP_X = W - MAP_W - 52;
     const MAP_Y = 52;
 
-    // Collect bounds via loop (spread on large arrays risks stack overflow)
     let minLat = Infinity, maxLat = -Infinity;
     let minLon = Infinity, maxLon = -Infinity;
     for (const seg of ROUTE_SEGS) {
@@ -221,27 +254,32 @@ export function buildPhotoStoryHtml(
     const lonRange = maxLon - minLon || 0.01;
     const innerW = MAP_W - MAP_PAD * 2;
     const innerH = MAP_H - MAP_PAD * 2;
-
-    // Preserve aspect ratio
     const scaleRaw = Math.min(innerW / lonRange, innerH / latRange);
     const drawW = lonRange * scaleRaw;
     const drawH = latRange * scaleRaw;
     const offX  = MAP_X + MAP_PAD + (innerW - drawW) / 2;
     const offY  = MAP_Y + MAP_PAD + (innerH - drawH) / 2;
-
     const scaleX = (lon) => offX + (lon - minLon) / lonRange * drawW;
     const scaleY = (lat) => offY + drawH - (lat - minLat) / latRange * drawH;
 
-    // Three-pass route rendering — dark outline → mid halo → bright fill
-    // (same technique as subtitle text: dark outside, bright inside)
-    const passes = [
-      { width: 14, style: 'rgba(2, 8, 20, 0.85)' },
-      { width: 9,  style: 'rgba(15, 60, 120, 0.6)' },
-      { width: 4,  style: '#74c0fc' },
-    ];
+    // When photos are present: dark/navy route (subtle).
+    // When card-only (no photos): bright blue route.
+    const hasPhotos = valid.length > 0;
+    const routePasses = hasPhotos
+      ? [
+          { width: 12, style: 'rgba(2, 5, 15, 0.9)' },
+          { width: 7,  style: 'rgba(5, 20, 50, 0.7)' },
+          { width: 3,  style: 'rgba(15, 37, 64, 0.95)' },
+        ]
+      : [
+          { width: 12, style: 'rgba(2, 8, 20, 0.85)' },
+          { width: 7,  style: 'rgba(15, 60, 120, 0.6)' },
+          { width: 3,  style: '#74c0fc' },
+        ];
+
     ctx.lineCap  = 'round';
     ctx.lineJoin = 'round';
-    for (const { width, style } of passes) {
+    for (const { width, style } of routePasses) {
       ctx.strokeStyle = style;
       ctx.lineWidth   = width;
       for (const seg of ROUTE_SEGS) {
@@ -255,27 +293,26 @@ export function buildPhotoStoryHtml(
       }
     }
 
-    // Stop dots — dark ring → white ring → blue centre
+    const dotFill = hasPhotos ? 'rgba(15,37,64,0.9)' : '#4dabf7';
     for (const [lat, lon] of STOP_COORDS) {
       const cx = scaleX(lon), cy = scaleY(lat);
       ctx.fillStyle = 'rgba(2,8,20,0.85)';
       ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#4dabf7';
-      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = dotFill;
+      ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2); ctx.fill();
     }
   }
 
   // ── info area ────────────────────────────────────────────────────────
 
   ctx.fillStyle = BG;
-  ctx.fillRect(0, INFO_Y, W, INFO_H);
+  ctx.fillRect(0, INFO_Y, W, H - INFO_Y);
 
   let y = INFO_Y + 58;
   const PAD = 72;
 
-  // eyebrow
   ctx.font        = 'bold 28px sans-serif';
   ctx.fillStyle   = 'rgba(127,180,240,0.85)';
   ctx.letterSpacing = '3px';
@@ -283,19 +320,16 @@ export function buildPhotoStoryHtml(
   ctx.letterSpacing = '0px';
   y += 20;
 
-  // title
   ctx.font      = 'bold 86px sans-serif';
   ctx.fillStyle = '#ffffff';
   const titleLines = wrapText(TITLE, PAD, y + 84, W - PAD * 2, 100, 2);
   y += 84 + titleLines * 100 + 28;
 
-  // stat pills
   ctx.font = 'bold 33px sans-serif';
   let sx = PAD;
   for (const stat of STATS) {
-    const tw  = ctx.measureText(stat).width;
-    const ph  = 48, pr = 24, pv = 8;
-    const pw  = tw + pr * 2;
+    const tw = ctx.measureText(stat).width;
+    const ph = 48, pr = 24, pv = 8, pw = tw + pr * 2;
     if (sx + pw > W - PAD) break;
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
     roundRect(sx, y - ph + pv, pw, ph, 24);
@@ -306,17 +340,14 @@ export function buildPhotoStoryHtml(
   }
   y += 72;
 
-  // divider
   ctx.fillStyle = 'rgba(255,255,255,0.1)';
   ctx.fillRect(PAD, y, W - PAD * 2, 1);
   y += 40;
 
-  // route stops
   const maxVisible = Math.min(STOPS.length, 4);
   for (let i = 0; i < maxVisible; i++) {
     const stop = STOPS[i];
 
-    // badge
     ctx.fillStyle = '#2f6db8';
     ctx.beginPath();
     ctx.arc(PAD + 20, y + 8, 22, 0, Math.PI * 2);
@@ -327,7 +358,6 @@ export function buildPhotoStoryHtml(
     ctx.fillText(String(i + 1), PAD + 20, y + 18);
     ctx.textAlign   = 'left';
 
-    // city + country
     ctx.font      = 'bold 38px sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(stop.city, PAD + 58, y + 10);
@@ -336,7 +366,6 @@ export function buildPhotoStoryHtml(
     ctx.fillText(stop.country, PAD + 58, y + 48);
     y += 86;
 
-    // connector + transport label
     if (stop.transport && i < maxVisible - 1) {
       ctx.fillStyle = 'rgba(127,180,240,0.35)';
       ctx.fillRect(PAD + 18, y - 4, 4, 30);
@@ -353,7 +382,6 @@ export function buildPhotoStoryHtml(
     ctx.fillText('+' + (STOPS.length - 4) + ' more stops', PAD + 58, y + 8);
   }
 
-  // watermark — bottom-right
   ctx.font      = '24px sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.22)';
   ctx.textAlign = 'right';
@@ -361,24 +389,13 @@ export function buildPhotoStoryHtml(
   ctx.textAlign = 'left';
 
   // ── export ───────────────────────────────────────────────────────────
+  // Single rAF flush ensures iOS canvas compositor has committed all draw
+  // calls before toDataURL reads the backing store (iOS WebKit quirk).
+  await new Promise(r => requestAnimationFrame(r));
 
-  let payload;
-  try {
-    payload = canvas.toDataURL('image/jpeg', 0.88);
-  } catch (err) {
-    payload = 'error:' + String(err);
-  }
-
-  // Poll until the RN WebView bridge is injected — fast renders finish
-  // before the bridge is ready, causing postMessage to silently fail.
-  (function send(retries) {
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(payload);
-    } else if (retries > 0) {
-      setTimeout(() => send(retries - 1), 80);
-    }
-  })(40); // up to ~3.2 s
-})();
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  window.ReactNativeWebView.postMessage(dataUrl);
+};
 </script>
 </body>
 </html>`;

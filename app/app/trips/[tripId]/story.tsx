@@ -1,13 +1,15 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
+
 import * as Sharing from 'expo-sharing';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   Share,
@@ -28,13 +30,22 @@ import { buildRouteCacheKey, getCachedRoute } from '@/features/trips/routing/rou
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
 import { computeTripStats, formatDistanceKm } from '@/features/trips/trip-stats';
 import type { TripDetail } from '@/features/trips/types';
-import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
+import {
+  buildPhotoStoryHtml,
+  type PhotoCropParams,
+} from '@/features/trips/photo-story-renderer';
 
 type PickerMemory = {
   id: string;
   stopLabel: string;
   imageUri: string;
 };
+
+// injectedJavaScript is executed by react-native-webview AFTER the
+// ReactNativeWebView bridge is injected — this guarantees the bridge
+// exists when runStoryCanvas calls postMessage.
+const TRIGGER_JS =
+  'if(window.runStoryCanvas){window.runStoryCanvas().catch(function(e){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage("error:"+String(e));});}true;';
 
 export default function TripStoryScreen() {
   const router = useRouter();
@@ -48,8 +59,17 @@ export default function TripStoryScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoStoryHtml, setPhotoStoryHtml] = useState<string | null>(null);
   const [isGeneratingPhotoStory, setIsGeneratingPhotoStory] = useState(false);
+  const [showRoute, setShowRoute] = useState(true);
+
+  // Photo picker state
   const [pickerMemories, setPickerMemories] = useState<PickerMemory[]>([]);
   const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false);
+
+  // Crop flow state
+  const [cropQueue, setCropQueue] = useState<string[]>([]);
+  const [cropCurrentIndex, setCropCurrentIndex] = useState(0);
+  const [cropParamsAccumulated, setCropParamsAccumulated] = useState<PhotoCropParams[]>([]);
+  const [isCropOpen, setIsCropOpen] = useState(false);
 
   const loadStory = useCallback(async () => {
     setIsLoading(true);
@@ -73,17 +93,11 @@ export default function TripStoryScreen() {
           nextTrip.legs.map(async (leg) => {
             const profile = getOsrmProfile(leg.transportType);
             if (!profile) return;
-
             const from = stopLookup.get(leg.fromStopId);
             const to = stopLookup.get(leg.toStopId);
             if (!from || !to) return;
-
             const cacheKey = buildRouteCacheKey(
-              from.latitude,
-              from.longitude,
-              to.latitude,
-              to.longitude,
-              profile,
+              from.latitude, from.longitude, to.latitude, to.longitude, profile,
             );
             const cached = await getCachedRoute(db, cacheKey);
             if (cached) {
@@ -161,45 +175,81 @@ export default function TripStoryScreen() {
     if (allMemories.length === 0) {
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, []));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
       return;
     }
 
     setPickerMemories(allMemories);
     setIsPhotoPickerOpen(true);
-  }, [isGeneratingPhotoStory, legRoutes, trip]);
+  }, [isGeneratingPhotoStory, legRoutes, showRoute, trip]);
 
   const handleShareCardAsImage = useCallback(() => {
     if (!trip || isGeneratingPhotoStory) return;
     setIsGeneratingPhotoStory(true);
     const stats = computeTripStats(trip, legRoutes);
-    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, []));
-  }, [isGeneratingPhotoStory, legRoutes, trip]);
+    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+  }, [isGeneratingPhotoStory, legRoutes, showRoute, trip]);
 
-  const handlePickerConfirm = useCallback(
-    async (selectedUris: string[]) => {
-      setIsPhotoPickerOpen(false);
+  // Called after photo picker confirms URIs — opens crop flow
+  const handlePickerConfirm = useCallback((selectedUris: string[]) => {
+    setIsPhotoPickerOpen(false);
+    if (selectedUris.length === 0) {
       if (!trip) return;
-
       setIsGeneratingPhotoStory(true);
-
-      const photoBase64s: string[] = [];
-      for (const uri of selectedUris) {
-        try {
-          const b64 = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          photoBase64s.push(b64);
-        } catch {
-          // skip unreadable photo
-        }
-      }
-
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s));
-    },
-    [legRoutes, trip],
-  );
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+      return;
+    }
+    setCropQueue(selectedUris);
+    setCropCurrentIndex(0);
+    setCropParamsAccumulated([]);
+    setIsCropOpen(true);
+  }, [legRoutes, showRoute, trip]);
+
+  // Generate story after all crops are decided
+  // Crop params are passed to the canvas renderer which applies them via coverImage.
+  const generateStory = useCallback(async (uris: string[], params: PhotoCropParams[]) => {
+    if (!trip) return;
+    setIsGeneratingPhotoStory(true);
+
+    const photoBase64s: string[] = [];
+    for (const uri of uris) {
+      try {
+        const b64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        photoBase64s.push(b64);
+      } catch {
+        // skip unreadable
+      }
+    }
+
+    const stats = computeTripStats(trip, legRoutes);
+    setPhotoStoryHtml(
+      buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, { showRoute, cropParams: params }),
+    );
+  }, [legRoutes, showRoute, trip]);
+
+  const handleCropConfirm = useCallback((params: PhotoCropParams) => {
+    const newParams = [...cropParamsAccumulated, params];
+    if (cropCurrentIndex + 1 < cropQueue.length) {
+      setCropParamsAccumulated(newParams);
+      setCropCurrentIndex((i) => i + 1);
+    } else {
+      setIsCropOpen(false);
+      void generateStory(cropQueue, newParams);
+    }
+  }, [cropCurrentIndex, cropParamsAccumulated, cropQueue, generateStory]);
+
+  const handleCropSkip = useCallback(() => {
+    const defaultParams: PhotoCropParams = { normX: 0, normY: 0, scale: 1 };
+    handleCropConfirm(defaultParams);
+  }, [handleCropConfirm]);
+
+  const handleCropSkipAll = useCallback(() => {
+    setIsCropOpen(false);
+    void generateStory(cropQueue, []);
+  }, [cropQueue, generateStory]);
 
   const handlePhotoStoryRendered = useCallback(
     async (event: { nativeEvent: { data: string } }) => {
@@ -278,6 +328,17 @@ export default function TripStoryScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
+        <View style={styles.routeToggleRow}>
+          <Text style={styles.routeToggleLabel}>Include route drawing</Text>
+          <Pressable
+            style={[styles.routeToggle, showRoute && styles.routeToggleActive]}
+            onPress={() => setShowRoute((v) => !v)}>
+            <Text style={[styles.routeToggleText, showRoute && styles.routeToggleTextActive]}>
+              {showRoute ? 'On' : 'Off'}
+            </Text>
+          </Pressable>
+        </View>
+
         <Pressable
           style={[styles.photoStoryButton, isGeneratingPhotoStory && styles.buttonDisabled]}
           disabled={isGeneratingPhotoStory}
@@ -304,6 +365,7 @@ export default function TripStoryScreen() {
         <View style={styles.hiddenRenderer}>
           <WebView
             source={{ html: photoStoryHtml }}
+            injectedJavaScript={TRIGGER_JS}
             onMessage={handlePhotoStoryRendered}
             style={styles.hiddenWebView}
             javaScriptEnabled
@@ -315,12 +377,25 @@ export default function TripStoryScreen() {
       <PhotoPickerModal
         memories={pickerMemories}
         visible={isPhotoPickerOpen}
-        onConfirm={(uris) => void handlePickerConfirm(uris)}
+        onConfirm={handlePickerConfirm}
         onCancel={() => setIsPhotoPickerOpen(false)}
       />
+
+      {isCropOpen && cropQueue[cropCurrentIndex] ? (
+        <CropModal
+          uri={cropQueue[cropCurrentIndex]}
+          photoNumber={cropCurrentIndex + 1}
+          totalPhotos={cropQueue.length}
+          onConfirm={handleCropConfirm}
+          onSkipThis={handleCropSkip}
+          onSkipAll={handleCropSkipAll}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
+
+// ── Photo picker ──────────────────────────────────────────────────────────────
 
 function PhotoPickerModal({
   memories,
@@ -401,7 +476,7 @@ function PhotoPickerModal({
               onPress={() => onConfirm(selectedUris)}>
               <Ionicons name="images-outline" size={18} color="#ffffff" />
               <Text style={pickerStyles.confirmText}>
-                {selectedUris.length === 0 ? 'Select photos first' : 'Create story'}
+                {selectedUris.length === 0 ? 'Select photos first' : 'Crop & create story'}
               </Text>
             </Pressable>
             <Pressable style={pickerStyles.skipButton} onPress={() => onConfirm([])}>
@@ -414,16 +489,169 @@ function PhotoPickerModal({
   );
 }
 
+// ── Crop modal ────────────────────────────────────────────────────────────────
+
+const CROP_FRAME = 296;
+
+function CropModal({
+  uri,
+  photoNumber,
+  totalPhotos,
+  onConfirm,
+  onSkipThis,
+  onSkipAll,
+}: {
+  uri: string;
+  photoNumber: number;
+  totalPhotos: number;
+  onConfirm(params: PhotoCropParams): void;
+  onSkipThis(): void;
+  onSkipAll(): void;
+}) {
+  const [cropState, setCropState] = useState<PhotoCropParams>({ normX: 0, normY: 0, scale: 1 });
+  const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
+  const cropRef = useRef(cropState);
+  cropRef.current = cropState;
+  const overflowRef = useRef({ x: 0, y: 0 });
+  const baseNorm = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setCropState({ normX: 0, normY: 0, scale: 1 });
+    setImgNaturalSize(null);
+    Image.getSize(uri, (w, h) => setImgNaturalSize({ w, h }), () => {});
+  }, [uri]);
+
+  useEffect(() => {
+    if (!imgNaturalSize) return;
+    const coverBase = Math.max(CROP_FRAME / imgNaturalSize.w, CROP_FRAME / imgNaturalSize.h);
+    const s = coverBase * cropState.scale;
+    const dw = imgNaturalSize.w * s;
+    const dh = imgNaturalSize.h * s;
+    overflowRef.current = {
+      x: Math.max(0, dw - CROP_FRAME),
+      y: Math.max(0, dh - CROP_FRAME),
+    };
+  }, [imgNaturalSize, cropState.scale]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        baseNorm.current = { x: cropRef.current.normX, y: cropRef.current.normY };
+      },
+      onPanResponderMove: (_, g) => {
+        const ox = overflowRef.current.x;
+        const oy = overflowRef.current.y;
+        setCropState((prev) => ({
+          ...prev,
+          normX: ox > 0 ? Math.max(-0.5, Math.min(0.5, baseNorm.current.x + g.dx / ox)) : 0,
+          normY: oy > 0 ? Math.max(-0.5, Math.min(0.5, baseNorm.current.y + g.dy / oy)) : 0,
+        }));
+      },
+    }),
+  ).current;
+
+  const displayMetrics = useMemo(() => {
+    if (!imgNaturalSize) return null;
+    const coverBase = Math.max(CROP_FRAME / imgNaturalSize.w, CROP_FRAME / imgNaturalSize.h);
+    const s = coverBase * cropState.scale;
+    const dw = imgNaturalSize.w * s;
+    const dh = imgNaturalSize.h * s;
+    const ox = Math.max(0, dw - CROP_FRAME);
+    const oy = Math.max(0, dh - CROP_FRAME);
+    return {
+      left: (CROP_FRAME - dw) / 2 + cropState.normX * ox,
+      top: (CROP_FRAME - dh) / 2 + cropState.normY * oy,
+      width: dw,
+      height: dh,
+    };
+  }, [imgNaturalSize, cropState]);
+
+  const adjustScale = (delta: number) => {
+    setCropState((prev) => ({
+      normX: 0,
+      normY: 0,
+      scale: Math.max(1, Math.min(3, prev.scale + delta)),
+    }));
+  };
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onSkipThis}>
+      <View style={cropStyles.backdrop}>
+        <View style={cropStyles.sheet}>
+          <View style={cropStyles.header}>
+            <View style={cropStyles.headerCopy}>
+              <Text style={cropStyles.title}>Crop photo {photoNumber} of {totalPhotos}</Text>
+              <Text style={cropStyles.subtitle}>Drag to reposition · +/− to zoom</Text>
+            </View>
+            {totalPhotos > 1 ? (
+              <Pressable onPress={onSkipAll}>
+                <Text style={cropStyles.skipAllText}>Skip all</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={cropStyles.frameArea}>
+            <View
+              style={[cropStyles.frame, { width: CROP_FRAME, height: CROP_FRAME }]}
+              {...panResponder.panHandlers}>
+              {displayMetrics ? (
+                <Image
+                  source={{ uri }}
+                  style={{
+                    position: 'absolute',
+                    width: displayMetrics.width,
+                    height: displayMetrics.height,
+                    left: displayMetrics.left,
+                    top: displayMetrics.top,
+                  }}
+                  resizeMode="stretch"
+                />
+              ) : (
+                <ActivityIndicator color={TravelColors.primary} />
+              )}
+              {/* Corner guide marks */}
+              <View style={[cropStyles.corner, cropStyles.cornerTL]} />
+              <View style={[cropStyles.corner, cropStyles.cornerTR]} />
+              <View style={[cropStyles.corner, cropStyles.cornerBL]} />
+              <View style={[cropStyles.corner, cropStyles.cornerBR]} />
+            </View>
+          </View>
+
+          <View style={cropStyles.zoomRow}>
+            <Pressable style={cropStyles.zoomButton} onPress={() => adjustScale(-0.15)}>
+              <Ionicons name="remove" size={22} color={TravelColors.primary} />
+            </Pressable>
+            <Text style={cropStyles.zoomLabel}>{Math.round(cropState.scale * 100)}%</Text>
+            <Pressable style={cropStyles.zoomButton} onPress={() => adjustScale(0.15)}>
+              <Ionicons name="add" size={22} color={TravelColors.primary} />
+            </Pressable>
+          </View>
+
+          <View style={cropStyles.footer}>
+            <Pressable style={cropStyles.skipButton} onPress={onSkipThis}>
+              <Text style={cropStyles.skipText}>
+                {photoNumber < totalPhotos ? 'Skip this photo' : 'Skip'}
+              </Text>
+            </Pressable>
+            <Pressable style={cropStyles.confirmButton} onPress={() => onConfirm(cropState)}>
+              <Text style={cropStyles.confirmText}>
+                {photoNumber < totalPhotos ? `Next photo →` : 'Create story'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: TravelColors.background,
-  },
-  content: {
-    padding: 20,
-    gap: 16,
-    alignItems: 'center',
-  },
+  safeArea: { flex: 1, backgroundColor: TravelColors.background },
+  content: { padding: 20, gap: 16, alignItems: 'center' },
   backButton: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -436,15 +664,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
   },
-  backButtonText: {
-    color: TravelColors.primary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  cardWrap: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
+  backButtonText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  cardWrap: { paddingVertical: 12, alignItems: 'center' },
   centeredState: {
     flex: 1,
     justifyContent: 'center',
@@ -452,15 +673,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 10,
   },
-  loadingText: {
-    color: TravelColors.mutedText,
-    fontSize: 14,
-  },
-  emptyTitle: {
-    color: TravelColors.text,
-    fontSize: 20,
-    fontWeight: '700',
-  },
+  loadingText: { color: TravelColors.mutedText, fontSize: 14 },
+  emptyTitle: { color: TravelColors.text, fontSize: 20, fontWeight: '700' },
   emptyBody: {
     color: TravelColors.secondaryText,
     fontSize: 15,
@@ -474,11 +688,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 18,
   },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   footer: {
     padding: 20,
     gap: 10,
@@ -486,6 +696,28 @@ const styles = StyleSheet.create({
     borderTopColor: TravelColors.border,
     backgroundColor: TravelColors.surface,
   },
+  routeToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  routeToggleLabel: { color: TravelColors.secondaryText, fontSize: 13, fontWeight: '600' },
+  routeToggle: {
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  routeToggleActive: {
+    backgroundColor: TravelColors.primary,
+    borderColor: TravelColors.primary,
+  },
+  routeToggleText: { color: TravelColors.primary, fontSize: 13, fontWeight: '700' },
+  routeToggleTextActive: { color: '#ffffff' },
   photoStoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -497,14 +729,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
   },
-  photoStoryButtonText: {
-    color: TravelColors.primary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
+  photoStoryButtonText: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
   cardImageButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -516,11 +741,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
   },
-  cardImageButtonText: {
-    color: TravelColors.primary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  cardImageButtonText: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
+  buttonDisabled: { opacity: 0.6 },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -530,29 +752,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: TravelColors.primary,
   },
-  shareButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  hiddenRenderer: {
-    position: 'absolute',
-    left: -1200,
-    top: -2100,
-    width: 1080,
-    height: 1920,
-  },
-  hiddenWebView: {
-    flex: 1,
-  },
+  shareButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  hiddenRenderer: { position: 'absolute', left: -1200, top: -2100, width: 1080, height: 1920 },
+  hiddenWebView: { flex: 1 },
 });
 
 const pickerStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(12,23,34,0.55)',
-    justifyContent: 'flex-end',
-  },
+  backdrop: { flex: 1, backgroundColor: 'rgba(12,23,34,0.55)', justifyContent: 'flex-end' },
   sheet: {
     maxHeight: '80%',
     backgroundColor: TravelColors.surface,
@@ -570,19 +776,9 @@ const pickerStyles = StyleSheet.create({
     borderBottomColor: TravelColors.border,
     gap: 12,
   },
-  headerCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  title: {
-    color: TravelColors.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: TravelColors.secondaryText,
-    fontSize: 13,
-  },
+  headerCopy: { flex: 1, gap: 2 },
+  title: { color: TravelColors.text, fontSize: 18, fontWeight: '700' },
+  subtitle: { color: TravelColors.secondaryText, fontSize: 13 },
   closeButton: {
     width: 36,
     height: 36,
@@ -591,12 +787,7 @@ const pickerStyles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: TravelColors.tintSurface,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 16,
-    gap: 12,
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 16, gap: 12 },
   thumb: {
     width: '30%',
     aspectRatio: 1,
@@ -607,16 +798,9 @@ const pickerStyles = StyleSheet.create({
     backgroundColor: TravelColors.tintSurface,
     position: 'relative',
   },
-  thumbSelected: {
-    borderColor: TravelColors.primary,
-  },
-  thumbDisabled: {
-    opacity: 0.4,
-  },
-  thumbImage: {
-    width: '100%',
-    height: '100%',
-  },
+  thumbSelected: { borderColor: TravelColors.primary },
+  thumbDisabled: { opacity: 0.4 },
+  thumbImage: { width: '100%', height: '100%' },
   thumbLabel: {
     position: 'absolute',
     bottom: 0,
@@ -640,15 +824,12 @@ const pickerStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  orderBadgeText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
+  orderBadgeText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
   footer: {
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: TravelColors.border,
+    gap: 4,
   },
   confirmButton: {
     flexDirection: 'row',
@@ -659,21 +840,96 @@ const pickerStyles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: TravelColors.primary,
   },
-  confirmDisabled: {
-    opacity: 0.45,
+  confirmDisabled: { opacity: 0.45 },
+  confirmText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  skipButton: { alignItems: 'center', paddingVertical: 10 },
+  skipText: { color: TravelColors.secondaryText, fontSize: 13, fontWeight: '600' },
+});
+
+const cropStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(8,16,30,0.82)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: TravelColors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 8,
   },
-  confirmText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: TravelColors.border,
+  },
+  headerCopy: { gap: 2 },
+  title: { color: TravelColors.text, fontSize: 17, fontWeight: '700' },
+  subtitle: { color: TravelColors.secondaryText, fontSize: 13 },
+  skipAllText: { color: TravelColors.primary, fontSize: 14, fontWeight: '600' },
+  frameArea: { alignItems: 'center', paddingVertical: 24 },
+  frame: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    position: 'relative',
+  },
+  corner: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderColor: '#ffffff',
+    opacity: 0.9,
+  },
+  cornerTL: { top: 8, left: 8, borderTopWidth: 2.5, borderLeftWidth: 2.5, borderTopLeftRadius: 4 },
+  cornerTR: { top: 8, right: 8, borderTopWidth: 2.5, borderRightWidth: 2.5, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 8, left: 8, borderBottomWidth: 2.5, borderLeftWidth: 2.5, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 8, right: 8, borderBottomWidth: 2.5, borderRightWidth: 2.5, borderBottomRightRadius: 4 },
+  zoomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    paddingVertical: 4,
+  },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  zoomLabel: { color: TravelColors.text, fontSize: 15, fontWeight: '700', minWidth: 50, textAlign: 'center' },
+  footer: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: TravelColors.border,
   },
   skipButton: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    borderRadius: 999,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    backgroundColor: TravelColors.tintSurface,
   },
-  skipText: {
-    color: TravelColors.secondaryText,
-    fontSize: 13,
-    fontWeight: '600',
+  skipText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  confirmButton: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.primary,
   },
+  confirmText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
 });
