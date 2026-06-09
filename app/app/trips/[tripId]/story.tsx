@@ -17,7 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { WebView } from 'react-native-webview';
 
@@ -320,6 +320,8 @@ export default function TripStoryScreen() {
     [trip],
   );
 
+  const { bottom: bottomInset } = useSafeAreaInsets();
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -348,9 +350,9 @@ export default function TripStoryScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <Stack.Screen options={{ title: trip.title }} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: 260 + bottomInset }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={18} color={TravelColors.primary} />
           <Text style={styles.backButtonText}>Back</Text>
@@ -389,7 +391,7 @@ export default function TripStoryScreen() {
         ) : null}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 20 + bottomInset }]}>
         <View style={styles.templateRow}>
           <Text style={styles.routeToggleLabel}>Story template</Text>
           <View style={styles.templateChips}>
@@ -800,6 +802,8 @@ function RoutePositionPicker({
   onPositionChange(pos: RoutePosition): void;
   onReset(): void;
 }) {
+  const basePos = useRef<RoutePosition>({ x: 0, y: 0 });
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -809,17 +813,17 @@ function RoutePositionPicker({
       onPanResponderGrant: (evt) => {
         const lx = evt.nativeEvent.locationX;
         const ly = evt.nativeEvent.locationY;
-        onPositionChange({
+        const newPos = {
           x: Math.round(Math.max(0, Math.min(CANVAS_W - MAP_SIZE, lx / PREV_SCALE - MAP_SIZE / 2))),
           y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, ly / PREV_SCALE - MAP_SIZE / 2))),
-        });
+        };
+        basePos.current = newPos;
+        onPositionChange(newPos);
       },
-      onPanResponderMove: (evt) => {
-        const lx = evt.nativeEvent.locationX;
-        const ly = evt.nativeEvent.locationY;
+      onPanResponderMove: (_, g) => {
         onPositionChange({
-          x: Math.round(Math.max(0, Math.min(CANVAS_W - MAP_SIZE, lx / PREV_SCALE - MAP_SIZE / 2))),
-          y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, ly / PREV_SCALE - MAP_SIZE / 2))),
+          x: Math.round(Math.max(0, Math.min(CANVAS_W - MAP_SIZE, basePos.current.x + g.dx / PREV_SCALE))),
+          y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, basePos.current.y + g.dy / PREV_SCALE))),
         });
       },
     }),
@@ -898,7 +902,13 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   footer: {
-    padding: 20,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
     gap: 10,
     borderTopWidth: 1,
     borderTopColor: TravelColors.border,
