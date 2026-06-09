@@ -350,7 +350,7 @@ export default function TripStoryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: trip.title }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={18} color={TravelColors.primary} />
           <Text style={styles.backButtonText}>Back</Text>
@@ -800,28 +800,27 @@ function RoutePositionPicker({
   onPositionChange(pos: RoutePosition): void;
   onReset(): void;
 }) {
-  const posRef = useRef(routePosition);
-  posRef.current = routePosition;
-  const basePos = useRef<RoutePosition>({ x: 0, y: 0 });
-
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      // Capture phase: claim the touch before ScrollView can intercept it
       onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderGrant: () => {
-        basePos.current = posRef.current;
+      onPanResponderGrant: (evt) => {
+        const lx = evt.nativeEvent.locationX;
+        const ly = evt.nativeEvent.locationY;
+        onPositionChange({
+          x: Math.round(Math.max(0, Math.min(CANVAS_W - MAP_SIZE, lx / PREV_SCALE - MAP_SIZE / 2))),
+          y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, ly / PREV_SCALE - MAP_SIZE / 2))),
+        });
       },
-      onPanResponderMove: (_, g) => {
-        const newX = Math.round(
-          Math.max(0, Math.min(CANVAS_W - MAP_SIZE, basePos.current.x + g.dx / PREV_SCALE)),
-        );
-        const newY = Math.round(
-          Math.max(0, Math.min(CANVAS_H - MAP_SIZE, basePos.current.y + g.dy / PREV_SCALE)),
-        );
-        onPositionChange({ x: newX, y: newY });
+      onPanResponderMove: (evt) => {
+        const lx = evt.nativeEvent.locationX;
+        const ly = evt.nativeEvent.locationY;
+        onPositionChange({
+          x: Math.round(Math.max(0, Math.min(CANVAS_W - MAP_SIZE, lx / PREV_SCALE - MAP_SIZE / 2))),
+          y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, ly / PREV_SCALE - MAP_SIZE / 2))),
+        });
       },
     }),
   ).current;
@@ -838,12 +837,15 @@ function RoutePositionPicker({
           <Text style={rpStyles.resetText}>Reset</Text>
         </Pressable>
       </View>
-      <Text style={rpStyles.hint}>Drag the blue box to reposition the route drawing on your story</Text>
-      <View style={[rpStyles.preview, { width: PREV_W, height: PREV_H }]}>
+      <Text style={rpStyles.hint}>Tap or drag anywhere in the preview to reposition the route drawing</Text>
+      <View
+        style={[rpStyles.preview, { width: PREV_W, height: PREV_H }]}
+        {...panResponder.panHandlers}
+      >
         <View style={[rpStyles.photoAreaTint, { height: PHOTO_AREA_PREV_H }]} />
         <View
           style={[rpStyles.indicator, { width: IND_SIZE, height: IND_SIZE, left: indLeft, top: indTop }]}
-          {...panResponder.panHandlers}
+          pointerEvents="none"
         >
           <Ionicons name="map-outline" size={Math.round(IND_SIZE * 0.55)} color="#74c0fc" />
         </View>
@@ -856,6 +858,7 @@ function RoutePositionPicker({
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TravelColors.background },
+  scroll: { flex: 1 },
   content: { padding: 20, gap: 16, alignItems: 'center' },
   backButton: {
     alignSelf: 'flex-start',
