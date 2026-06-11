@@ -76,6 +76,7 @@ export default function TripStoryScreen() {
 
   const [routePosition, setRoutePosition] = useState<RoutePosition>(DEFAULT_ROUTE_POSITION);
   const [storyTemplate, setStoryTemplate] = useState<StoryTemplate>('navy');
+  const scrollRef = useRef<ScrollView>(null);
 
   const loadStory = useCallback(async () => {
     setIsLoading(true);
@@ -233,23 +234,35 @@ export default function TripStoryScreen() {
     setIsGeneratingPhotoStory(true);
 
     const photoBase64s: string[] = [];
+    let firstPhotoError: string | null = null;
     for (const uri of uris) {
       try {
-        // Resize to ≤1080px wide before encoding. iOS camera photos can be 12MP+,
-        // turning a 2-photo story into a 20MB+ HTML string that overwhelms WKWebView.
-        // The canvas is only 1080px wide, so anything larger is pure overhead.
+        // Resize to 960px wide before encoding. Camera photos can be 12MP+;
+        // the canvas is 1080px wide but photo panels are ≤1080px, so 960px
+        // is sufficient and keeps the HTML payload small enough for WKWebView.
         const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
           uri,
-          [{ resize: { width: 1080 } }],
-          { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
+          [{ resize: { width: 960 } }],
+          { compress: 0.78, format: ImageManipulator.SaveFormat.JPEG },
         );
         const b64 = await FileSystem.readAsStringAsync(jpegUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
         photoBase64s.push(b64);
-      } catch {
-        // skip unreadable / unsupported format
+      } catch (err) {
+        if (!firstPhotoError) {
+          firstPhotoError = err instanceof Error ? err.message : String(err);
+        }
       }
+    }
+
+    if (uris.length > 0 && photoBase64s.length === 0) {
+      setIsGeneratingPhotoStory(false);
+      Alert.alert(
+        'Could not process photos',
+        firstPhotoError ?? 'Check that the app has photo library access and try again.',
+      );
+      return;
     }
 
     const stats = computeTripStats(trip, legRoutes);
@@ -352,7 +365,7 @@ export default function TripStoryScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <Stack.Screen options={{ title: trip.title }} />
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: 260 + bottomInset }]}>
+      <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: 260 + bottomInset }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={18} color={TravelColors.primary} />
           <Text style={styles.backButtonText}>Back</Text>
@@ -387,6 +400,8 @@ export default function TripStoryScreen() {
             routePosition={routePosition}
             onPositionChange={setRoutePosition}
             onReset={() => setRoutePosition(DEFAULT_ROUTE_POSITION)}
+            onDragStart={() => scrollRef.current?.setNativeProps({ scrollEnabled: false })}
+            onDragEnd={() => scrollRef.current?.setNativeProps({ scrollEnabled: true })}
           />
         ) : null}
       </ScrollView>
@@ -394,7 +409,12 @@ export default function TripStoryScreen() {
       <View style={[styles.footer, { paddingBottom: 20 + bottomInset }]}>
         <View style={styles.templateRow}>
           <Text style={styles.routeToggleLabel}>Story template</Text>
-          <View style={styles.templateChips}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.templateChips}
+            contentContainerStyle={styles.templateChipsContent}
+          >
             {(['navy', 'journey', 'filmstrip'] as StoryTemplate[]).map((t) => (
               <Pressable
                 key={t}
@@ -410,7 +430,7 @@ export default function TripStoryScreen() {
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         </View>
 
         <View style={styles.routeToggleRow}>
@@ -797,12 +817,23 @@ function RoutePositionPicker({
   routePosition,
   onPositionChange,
   onReset,
+  onDragStart,
+  onDragEnd,
 }: {
   routePosition: RoutePosition;
   onPositionChange(pos: RoutePosition): void;
   onReset(): void;
+  onDragStart?(): void;
+  onDragEnd?(): void;
 }) {
   const basePos = useRef<RoutePosition>({ x: 0, y: 0 });
+  // Keep latest callbacks in refs so the closure created once in useRef always calls the current version
+  const onDragStartRef = useRef(onDragStart);
+  onDragStartRef.current = onDragStart;
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
+  const onPositionChangeRef = useRef(onPositionChange);
+  onPositionChangeRef.current = onPositionChange;
 
   const panResponder = useRef(
     PanResponder.create({
@@ -811,6 +842,7 @@ function RoutePositionPicker({
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (evt) => {
+        onDragStartRef.current?.();
         const lx = evt.nativeEvent.locationX;
         const ly = evt.nativeEvent.locationY;
         const newPos = {
@@ -818,14 +850,16 @@ function RoutePositionPicker({
           y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, ly / PREV_SCALE - MAP_SIZE / 2))),
         };
         basePos.current = newPos;
-        onPositionChange(newPos);
+        onPositionChangeRef.current(newPos);
       },
       onPanResponderMove: (_, g) => {
-        onPositionChange({
+        onPositionChangeRef.current({
           x: Math.round(Math.max(0, Math.min(CANVAS_W - MAP_SIZE, basePos.current.x + g.dx / PREV_SCALE))),
           y: Math.round(Math.max(0, Math.min(CANVAS_H - MAP_SIZE, basePos.current.y + g.dy / PREV_SCALE))),
         });
       },
+      onPanResponderRelease: () => { onDragEndRef.current?.(); },
+      onPanResponderTerminate: () => { onDragEndRef.current?.(); },
     }),
   ).current;
 
@@ -1018,8 +1052,12 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   templateChips: {
+    flexShrink: 1,
+  },
+  templateChipsContent: {
     flexDirection: 'row',
     gap: 6,
+    paddingRight: 4,
   },
   templateChip: {
     borderRadius: 999,

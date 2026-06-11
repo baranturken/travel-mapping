@@ -336,37 +336,41 @@ window.runStoryCanvas = async function() {
     ctx.fillRect(PAD, y, W - PAD * 2, 1);
     y += 40;
 
-    const maxVisible = Math.min(STOPS.length, 4);
-    for (let i = 0; i < maxVisible; i++) {
-      const stop = STOPS[i];
-      ctx.fillStyle = '#2f6db8';
-      ctx.beginPath(); ctx.arc(PAD + 20, y + 8, 22, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 24px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(i + 1), PAD + 20, y + 18);
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 38px sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(stop.city, PAD + 58, y + 10);
-      ctx.font = '29px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillText(stop.country, PAD + 58, y + 48);
-      y += 86;
-      if (stop.transport && i < maxVisible - 1) {
-        ctx.fillStyle = 'rgba(127,180,240,0.35)';
-        ctx.fillRect(PAD + 18, y - 4, 4, 30);
-        ctx.font = 'bold 28px sans-serif';
-        ctx.fillStyle = '#7fb4f0';
-        ctx.fillText(stop.transport, PAD + 46, y + 22);
-        y += 52;
+    {
+      const n = STOPS.length;
+      const availH = H - 80 - y;
+      const idealH = n * 86 + Math.max(0, n - 1) * 52;
+      const sc = idealH > availH ? Math.max(0.52, availH / idealH) : 1;
+      const rowH = Math.round(86 * sc), conH = Math.round(52 * sc);
+      const cityF = Math.max(20, Math.round(38 * sc)), ctryF = Math.max(15, Math.round(29 * sc));
+      const dotR = Math.max(12, Math.round(20 * sc));
+      for (let i = 0; i < n; i++) {
+        const stop = STOPS[i];
+        const cy = y + Math.round(rowH * 0.42);
+        ctx.fillStyle = '#2f6db8';
+        ctx.beginPath(); ctx.arc(PAD + dotR, cy, dotR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold ' + Math.round(dotR * 1.1) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(i + 1), PAD + dotR, cy + Math.round(dotR * 0.38));
+        ctx.textAlign = 'left';
+        ctx.font = 'bold ' + cityF + 'px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(stop.city, PAD + dotR * 2 + 14, y + Math.round(rowH * 0.38));
+        ctx.font = ctryF + 'px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(stop.country, PAD + dotR * 2 + 14, y + Math.round(rowH * 0.76));
+        y += rowH;
+        if (stop.transport && i < n - 1) {
+          const lineH = Math.max(14, Math.round(conH * 0.55));
+          ctx.fillStyle = 'rgba(127,180,240,0.35)';
+          ctx.fillRect(PAD + dotR - 2, y - 2, 4, lineH);
+          ctx.font = 'bold ' + Math.max(14, Math.round(28 * sc)) + 'px sans-serif';
+          ctx.fillStyle = '#7fb4f0';
+          ctx.fillText(stop.transport, PAD + dotR * 2 + 14, y + Math.round(conH * 0.6));
+          y += conH;
+        }
       }
-    }
-
-    if (STOPS.length > 4) {
-      ctx.font = '28px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillText('+' + (STOPS.length - 4) + ' more stops', PAD + 58, y + 8);
     }
 
     ctx.font = '24px sans-serif';
@@ -522,40 +526,39 @@ window.runStoryCanvas = async function() {
     }
 
     // ── Stop list ──
-    const maxStops = Math.min(STOPS.length, 4);
-    for (let i = 0; i < maxStops; i++) {
-      const stop = STOPS[i];
-      ctx.fillStyle = 'rgba(0,0,0,0.38)';
-      roundRect(PAD, y, W - PAD * 2, 80, 22); ctx.fill();
-
-      ctx.fillStyle = '#2f6db8';
-      ctx.beginPath(); ctx.arc(PAD + 30, y + 40, 24, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(i + 1), PAD + 30, y + 47);
-      ctx.textAlign = 'left';
-
-      ctx.font = 'bold 35px sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(stop.city, PAD + 70, y + 30);
-      ctx.font = '27px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.62)';
-      ctx.fillText(stop.country, PAD + 70, y + 62);
-      y += 92;
-
-      if (stop.transport && i < maxStops - 1) {
-        ctx.font = 'bold 25px sans-serif';
-        ctx.fillStyle = 'rgba(116,192,252,0.82)';
-        ctx.fillText('  ' + stop.transport, PAD + 70, y + 6);
-        y += 40;
+    {
+      const n = STOPS.length;
+      const availH = H - 66 - y;
+      const idealH = n * 92 + Math.max(0, n - 1) * 40;
+      const sc = idealH > availH ? Math.max(0.50, availH / idealH) : 1;
+      const rowH = Math.round(92 * sc), conH = Math.round(40 * sc);
+      const cardH = Math.round(80 * sc), dotR = Math.round(24 * sc);
+      const cityF = Math.max(18, Math.round(35 * sc)), ctryF = Math.max(14, Math.round(27 * sc));
+      for (let i = 0; i < n; i++) {
+        const stop = STOPS[i];
+        ctx.fillStyle = 'rgba(0,0,0,0.38)';
+        roundRect(PAD, y, W - PAD * 2, cardH, Math.round(22 * sc)); ctx.fill();
+        ctx.fillStyle = '#2f6db8';
+        ctx.beginPath(); ctx.arc(PAD + dotR + 6, y + Math.round(cardH / 2), dotR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold ' + Math.round(dotR * 0.92) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(i + 1), PAD + dotR + 6, y + Math.round(cardH / 2) + Math.round(dotR * 0.36));
+        ctx.textAlign = 'left';
+        ctx.font = 'bold ' + cityF + 'px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(stop.city, PAD + dotR * 2 + 20, y + Math.round(cardH * 0.42));
+        ctx.font = ctryF + 'px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.62)';
+        ctx.fillText(stop.country, PAD + dotR * 2 + 20, y + Math.round(cardH * 0.76));
+        y += rowH;
+        if (stop.transport && i < n - 1) {
+          ctx.font = 'bold ' + Math.max(13, Math.round(25 * sc)) + 'px sans-serif';
+          ctx.fillStyle = 'rgba(116,192,252,0.82)';
+          ctx.fillText('  ' + stop.transport, PAD + dotR * 2 + 20, y + Math.round(conH * 0.55));
+          y += conH;
+        }
       }
-    }
-
-    if (STOPS.length > 4) {
-      ctx.font = '26px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.42)';
-      ctx.fillText('+' + (STOPS.length - 4) + ' more stops', PAD + 70, y + 8);
     }
 
     ctx.font = '22px sans-serif';
@@ -683,37 +686,41 @@ window.runStoryCanvas = async function() {
     ctx.fillRect(L, y, CONTENT_W, 1);
     y += 28;
 
-    const maxStops = Math.min(STOPS.length, 4);
-    for (let i = 0; i < maxStops; i++) {
-      const stop = STOPS[i];
-      ctx.fillStyle = '#2f6db8';
-      ctx.beginPath(); ctx.arc(L + 18, y + 8, 20, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 20px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(i + 1), L + 18, y + 17);
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 34px sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(stop.city, L + 48, y + 10);
-      ctx.font = '26px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillText(stop.country, L + 48, y + 44);
-      y += 76;
-      if (stop.transport && i < maxStops - 1) {
-        ctx.fillStyle = 'rgba(127,180,240,0.35)';
-        ctx.fillRect(L + 16, y - 2, 3, 24);
-        ctx.font = 'bold 25px sans-serif';
-        ctx.fillStyle = '#7fb4f0';
-        ctx.fillText(stop.transport, L + 42, y + 19);
-        y += 42;
+    {
+      const n = STOPS.length;
+      const availH = H - 66 - y;
+      const idealH = n * 76 + Math.max(0, n - 1) * 42;
+      const sc = idealH > availH ? Math.max(0.48, availH / idealH) : 1;
+      const rowH = Math.round(76 * sc), conH = Math.round(42 * sc);
+      const dotR = Math.max(11, Math.round(20 * sc));
+      const cityF = Math.max(17, Math.round(34 * sc)), ctryF = Math.max(13, Math.round(26 * sc));
+      for (let i = 0; i < n; i++) {
+        const stop = STOPS[i];
+        const cy = y + Math.round(rowH * 0.38);
+        ctx.fillStyle = '#2f6db8';
+        ctx.beginPath(); ctx.arc(L + dotR, cy, dotR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold ' + Math.round(dotR * 0.9) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(i + 1), L + dotR, cy + Math.round(dotR * 0.35));
+        ctx.textAlign = 'left';
+        ctx.font = 'bold ' + cityF + 'px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(stop.city, L + dotR * 2 + 8, y + Math.round(rowH * 0.35));
+        ctx.font = ctryF + 'px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(stop.country, L + dotR * 2 + 8, y + Math.round(rowH * 0.72));
+        y += rowH;
+        if (stop.transport && i < n - 1) {
+          const lineH = Math.round(conH * 0.57);
+          ctx.fillStyle = 'rgba(127,180,240,0.35)';
+          ctx.fillRect(L + dotR - 1, y - 1, 3, lineH);
+          ctx.font = 'bold ' + Math.max(13, Math.round(25 * sc)) + 'px sans-serif';
+          ctx.fillStyle = '#7fb4f0';
+          ctx.fillText(stop.transport, L + dotR * 2 + 8, y + Math.round(conH * 0.56));
+          y += conH;
+        }
       }
-    }
-
-    if (STOPS.length > 4) {
-      ctx.font = '25px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillText('+' + (STOPS.length - 4) + ' more stops', L + 48, y + 8);
     }
 
     ctx.font = '22px sans-serif';

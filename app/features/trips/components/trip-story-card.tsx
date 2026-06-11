@@ -11,14 +11,9 @@ type TripStoryCardProps = {
   style?: ViewStyle;
 };
 
-const MAX_VISIBLE_STOPS = 6;
-
 export function TripStoryCard({ trip, legRoutes, style }: TripStoryCardProps) {
   const stats = computeTripStats(trip, legRoutes);
   const dateRange = formatTripDateRange(trip.startDate, trip.endDate);
-
-  const visibleStops = trip.stops.slice(0, MAX_VISIBLE_STOPS);
-  const hiddenStopCount = trip.stops.length - visibleStops.length;
 
   const legByFromStopId = new Map(trip.legs.map((leg) => [leg.fromStopId, leg]));
 
@@ -58,9 +53,9 @@ export function TripStoryCard({ trip, legRoutes, style }: TripStoryCardProps) {
       </View>
 
       <View style={styles.timeline}>
-        {visibleStops.map((stop, index) => {
+        {trip.stops.map((stop, index) => {
           const outgoingLeg = legByFromStopId.get(stop.id);
-          const showConnector = index < visibleStops.length - 1 && outgoingLeg;
+          const showConnector = index < trip.stops.length - 1 && outgoingLeg;
           const transport = outgoingLeg
             ? getTransportDisplay(outgoingLeg.transportType, outgoingLeg.transportLabel)
             : null;
@@ -93,12 +88,6 @@ export function TripStoryCard({ trip, legRoutes, style }: TripStoryCardProps) {
           );
         })}
 
-        {hiddenStopCount > 0 ? (
-          <View style={styles.moreRow}>
-            <View style={styles.connectorLine} />
-            <Text style={styles.moreText}>+{hiddenStopCount} more</Text>
-          </View>
-        ) : null}
       </View>
 
       <Text style={styles.watermark}>Created with Travel Mapping</Text>
@@ -204,17 +193,6 @@ const styles = StyleSheet.create({
   },
   connectorText: {
     color: '#7fb4f0',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  moreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingLeft: 14,
-  },
-  moreText: {
-    color: 'rgba(255, 255, 255, 0.6)',
     fontSize: 12,
     fontWeight: '700',
   },
