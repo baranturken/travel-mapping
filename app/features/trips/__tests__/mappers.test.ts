@@ -95,6 +95,9 @@ describe('trip mappers', () => {
       endDate: '2026-04-05',
       createdAt: '2026-04-01T00:00:00.000Z',
       updatedAt: '2026-04-02T00:00:00.000Z',
+      isPublic: false,
+      supabaseId: null,
+      publishedAt: null,
       stops: [
         {
           id: 'stop-1',
@@ -171,6 +174,9 @@ describe('trip mappers', () => {
       endDate: '2026-09-05',
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-02T00:00:00.000Z',
+      isPublic: false,
+      supabaseId: null,
+      publishedAt: null,
       stops: [
         {
           id: 'stop-1',
@@ -293,6 +299,9 @@ describe('trip mappers', () => {
       endDate: null,
       createdAt: '2026-05-01T00:00:00.000Z',
       updatedAt: '2026-05-02T00:00:00.000Z',
+      isPublic: false,
+      supabaseId: null,
+      publishedAt: null,
       stops: [
         {
           id: 'stop-1',

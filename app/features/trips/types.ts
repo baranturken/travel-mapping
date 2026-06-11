@@ -73,6 +73,9 @@ export type TripSummary = {
   endDate: string | null;
   createdAt: string;
   updatedAt: string;
+  isPublic: boolean;
+  supabaseId: string | null;
+  publishedAt: string | null;
 };
 
 export type TripDetail = TripSummary & {

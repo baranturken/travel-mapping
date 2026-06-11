@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 async function hasColumn(db: SQLiteDatabase, tableName: string, columnName: string) {
   if (!/^[a-z_]+$/i.test(tableName)) {
@@ -189,6 +189,26 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     }
 
     currentVersion = 5;
+  }
+
+  if (currentVersion === 5) {
+    if (!(await hasColumn(db, 'trips', 'is_public'))) {
+      await db.execAsync(`
+        ALTER TABLE trips ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
+    if (!(await hasColumn(db, 'trips', 'supabase_id'))) {
+      await db.execAsync(`
+        ALTER TABLE trips ADD COLUMN supabase_id TEXT;
+      `);
+    }
+    if (!(await hasColumn(db, 'trips', 'published_at'))) {
+      await db.execAsync(`
+        ALTER TABLE trips ADD COLUMN published_at TEXT;
+      `);
+    }
+
+    currentVersion = 6;
   }
 
   await db.execAsync(`PRAGMA user_version = ${currentVersion}`);

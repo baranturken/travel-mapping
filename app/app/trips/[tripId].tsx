@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
+import { useAuth } from '@/features/auth/auth-context';
 import { TripMapWebView, type LegRouteData } from '@/features/trips/components/trip-map-webview';
 import {
   formatTripDateRange,
@@ -36,16 +37,19 @@ import {
   type TripDetail,
   type TripStop,
 } from '@/features/trips/types';
+import { publishTrip, unpublishTrip } from '@/features/social/social-repository';
 
 export default function TripDetailScreen() {
   const router = useRouter();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const db = useSQLiteContext();
   const repository = useMemo(() => createSQLiteTripRepository(db), [db]);
+  const { user } = useAuth();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [legRoutes, setLegRoutes] = useState<Record<string, LegRouteData>>({});
 
@@ -131,6 +135,98 @@ export default function TripDetailScreen() {
       setIsDuplicating(false);
     }
   }, [isDuplicating, repository, router, trip]);
+
+  const handlePublishTrip = useCallback(() => {
+    if (!trip || !user || isPublishing) return;
+
+    const alreadyPublished = Boolean(trip.supabaseId);
+
+    Alert.alert(
+      alreadyPublished ? 'Update published trip' : 'Publish trip',
+      alreadyPublished
+        ? 'Re-sync this trip to update what others can see. Choose visibility:'
+        : 'Choose who can see this trip:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Public',
+          onPress: () => void doPublish(true),
+        },
+        {
+          text: 'Private (link only)',
+          onPress: () => void doPublish(false),
+        },
+      ],
+    );
+
+    async function doPublish(isPublic: boolean) {
+      if (!trip || !user) return;
+      try {
+        setIsPublishing(true);
+        const stopsJson = trip.stops.map((s) => ({
+          cityName: s.cityName,
+          countryName: s.countryName,
+          isHomeBase: s.isHomeBase,
+          stayLabel: s.stayLabel,
+          latitude: s.latitude,
+          longitude: s.longitude,
+        }));
+        const legsJson = trip.legs.map((l) => ({
+          orderIndex: l.orderIndex,
+          transportType: l.transportType,
+          transportLabel: l.transportLabel,
+        }));
+
+        const supabaseId = await publishTrip({
+          localId: trip.id,
+          userId: user.id,
+          title: trip.title,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          stopsJson,
+          legsJson,
+          isPublic,
+        });
+
+        const publishedAt = new Date().toISOString();
+        await repository.setTripPublishStatus(trip.id, supabaseId, isPublic, publishedAt);
+        setTrip((prev) =>
+          prev ? { ...prev, supabaseId, isPublic, publishedAt } : null,
+        );
+        Alert.alert('Published', isPublic ? 'This trip is now public on your profile.' : 'This trip is saved privately.');
+      } catch (err) {
+        Alert.alert('Could not publish', err instanceof Error ? err.message : 'Please try again.');
+      } finally {
+        setIsPublishing(false);
+      }
+    }
+  }, [trip, user, isPublishing, repository]);
+
+  const handleUnpublishTrip = useCallback(() => {
+    if (!trip?.supabaseId || isPublishing) return;
+    Alert.alert('Remove from feed?', 'This will delete the published copy. Your local trip is unaffected.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () =>
+          void (async () => {
+            try {
+              setIsPublishing(true);
+              await unpublishTrip(trip.supabaseId!);
+              await repository.setTripPublishStatus(trip.id, null, false, null);
+              setTrip((prev) =>
+                prev ? { ...prev, supabaseId: null, isPublic: false, publishedAt: null } : null,
+              );
+            } catch (err) {
+              Alert.alert('Could not remove', err instanceof Error ? err.message : 'Please try again.');
+            } finally {
+              setIsPublishing(false);
+            }
+          })(),
+      },
+    ]);
+  }, [trip, isPublishing, repository]);
 
   if (isLoading) {
     return (
@@ -261,6 +357,27 @@ export default function TripDetailScreen() {
                 {isDuplicating ? 'Duplicating…' : 'Duplicate'}
               </Text>
             </Pressable>
+            {trip.supabaseId ? (
+              <Pressable
+                style={[styles.secondaryActionButton, styles.publishedActionButton, isPublishing && styles.secondaryActionButtonDisabled]}
+                disabled={isPublishing}
+                onPress={handleUnpublishTrip}>
+                <Ionicons name="cloud-done-outline" size={14} color="#2d7a47" />
+                <Text style={styles.publishedActionButtonText}>
+                  {isPublishing ? 'Updating…' : 'Published'}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[styles.secondaryActionButton, isPublishing && styles.secondaryActionButtonDisabled]}
+                disabled={isPublishing}
+                onPress={handlePublishTrip}>
+                <Ionicons name="cloud-upload-outline" size={14} color={TravelColors.primary} />
+                <Text style={[styles.secondaryActionButtonText, { color: TravelColors.primary }]}>
+                  {isPublishing ? 'Publishing…' : 'Publish'}
+                </Text>
+              </Pressable>
+            )}
             <Pressable
               style={[styles.secondaryActionButton, styles.deleteActionButton, (isDeleting || isDuplicating) && styles.secondaryActionButtonDisabled]}
               disabled={isDeleting || isDuplicating}
@@ -693,6 +810,15 @@ const styles = StyleSheet.create({
   },
   deleteActionButtonText: {
     color: TravelColors.danger,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  publishedActionButton: {
+    borderColor: '#b7dfc2',
+    backgroundColor: '#e6f4ea',
+  },
+  publishedActionButtonText: {
+    color: '#2d7a47',
     fontSize: 13,
     fontWeight: '600',
   },
