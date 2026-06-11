@@ -136,7 +136,7 @@ export default function TripStoryScreen() {
     }, [loadStory]),
   );
 
-  // Safety net: if canvas never responds, reset after 30 s to unblock the UI
+  // Safety net: if canvas never responds, reset after 60 s to unblock the UI
   useEffect(() => {
     if (!isGeneratingPhotoStory) return;
     const timer = setTimeout(() => {
@@ -144,11 +144,16 @@ export default function TripStoryScreen() {
       setPhotoStoryHtml(null);
       Alert.alert(
         'Story timed out',
-        'The story took too long to generate. Try with fewer or smaller photos.',
+        'The story took too long to generate. Try selecting fewer or smaller photos.',
       );
-    }, 30000);
+    }, 60000);
     return () => clearTimeout(timer);
   }, [isGeneratingPhotoStory]);
+
+  const hiddenWebViewRef = useRef<WebView>(null);
+  const handleHiddenWebViewLoad = useCallback(() => {
+    hiddenWebViewRef.current?.injectJavaScript(TRIGGER_JS);
+  }, []);
 
   const handleShare = useCallback(async () => {
     if (!trip) return;
@@ -223,7 +228,7 @@ export default function TripStoryScreen() {
     }
     setCropQueue(selectedUris);
     setCropCurrentIndex(0);
-    setCropParamsAccumulated([]);
+    setCropParamsAccumulated(new Array(selectedUris.length).fill(null));
     setIsCropOpen(true);
   }, [legRoutes, routePosition, showRoute, storyTemplate, trip]);
 
@@ -277,20 +282,25 @@ export default function TripStoryScreen() {
   }, [legRoutes, routePosition, showRoute, storyTemplate, trip]);
 
   const handleCropConfirm = useCallback((params: PhotoCropParams) => {
-    const newParams = [...cropParamsAccumulated, params];
+    const newParams = cropParamsAccumulated.slice();
+    newParams[cropCurrentIndex] = params;
+    setCropParamsAccumulated(newParams);
     if (cropCurrentIndex + 1 < cropQueue.length) {
-      setCropParamsAccumulated(newParams);
       setCropCurrentIndex((i) => i + 1);
     } else {
       setIsCropOpen(false);
-      void generateStory(cropQueue, newParams);
+      const finalParams = newParams.map((p) => p ?? { normX: 0, normY: 0, scale: 1 as const });
+      void generateStory(cropQueue, finalParams);
     }
   }, [cropCurrentIndex, cropParamsAccumulated, cropQueue, generateStory]);
 
   const handleCropSkip = useCallback(() => {
-    const defaultParams: PhotoCropParams = { normX: 0, normY: 0, scale: 1 };
-    handleCropConfirm(defaultParams);
+    handleCropConfirm({ normX: 0, normY: 0, scale: 1 });
   }, [handleCropConfirm]);
+
+  const handleCropPrevious = useCallback(() => {
+    if (cropCurrentIndex > 0) setCropCurrentIndex((i) => i - 1);
+  }, [cropCurrentIndex]);
 
   const handleCropSkipAll = useCallback(() => {
     setIsCropOpen(false);
@@ -479,8 +489,9 @@ export default function TripStoryScreen() {
       {photoStoryHtml ? (
         <View style={styles.hiddenRenderer}>
           <WebView
+            ref={hiddenWebViewRef}
             source={{ html: photoStoryHtml }}
-            injectedJavaScript={TRIGGER_JS}
+            onLoadEnd={handleHiddenWebViewLoad}
             onMessage={handlePhotoStoryRendered}
             style={styles.hiddenWebView}
             javaScriptEnabled
@@ -498,12 +509,15 @@ export default function TripStoryScreen() {
 
       {isCropOpen && cropQueue[cropCurrentIndex] ? (
         <CropModal
+          key={cropCurrentIndex}
           uri={cropQueue[cropCurrentIndex]}
           photoNumber={cropCurrentIndex + 1}
           totalPhotos={cropQueue.length}
+          initialCrop={cropParamsAccumulated[cropCurrentIndex] ?? undefined}
           onConfirm={handleCropConfirm}
           onSkipThis={handleCropSkip}
           onSkipAll={handleCropSkipAll}
+          onPrevious={cropCurrentIndex > 0 ? handleCropPrevious : undefined}
         />
       ) : null}
     </SafeAreaView>
@@ -612,18 +626,22 @@ function CropModal({
   uri,
   photoNumber,
   totalPhotos,
+  initialCrop,
   onConfirm,
   onSkipThis,
   onSkipAll,
+  onPrevious,
 }: {
   uri: string;
   photoNumber: number;
   totalPhotos: number;
+  initialCrop?: PhotoCropParams;
   onConfirm(params: PhotoCropParams): void;
   onSkipThis(): void;
   onSkipAll(): void;
+  onPrevious?(): void;
 }) {
-  const [cropState, setCropState] = useState<PhotoCropParams>({ normX: 0, normY: 0, scale: 1 });
+  const [cropState, setCropState] = useState<PhotoCropParams>(initialCrop ?? { normX: 0, normY: 0, scale: 1 });
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const cropRef = useRef(cropState);
   cropRef.current = cropState;
@@ -632,7 +650,7 @@ function CropModal({
   const pinchRef = useRef<{ baseDist: number; baseScale: number } | null>(null);
 
   useEffect(() => {
-    setCropState({ normX: 0, normY: 0, scale: 1 });
+    // component is remounted via key prop on navigation, so only load image size here
     setImgNaturalSize(null);
     Image.getSize(uri, (w, h) => setImgNaturalSize({ w, h }), () => {});
   }, [uri]);
@@ -787,14 +805,28 @@ function CropModal({
           </View>
 
           <View style={cropStyles.footer}>
-            <Pressable style={cropStyles.skipButton} onPress={onSkipThis}>
-              <Text style={cropStyles.skipText}>No crop</Text>
-            </Pressable>
-            <Pressable style={cropStyles.confirmButton} onPress={() => onConfirm(cropState)}>
-              <Text style={cropStyles.confirmText}>
-                {photoNumber < totalPhotos ? `Next →` : 'Create story'}
-              </Text>
-            </Pressable>
+            {onPrevious ? (
+              <Pressable style={cropStyles.prevButton} onPress={onPrevious}>
+                <Ionicons name="arrow-back" size={16} color={TravelColors.primary} />
+                <Text style={cropStyles.prevText}>Back</Text>
+              </Pressable>
+            ) : (
+              <Pressable style={cropStyles.skipButton} onPress={onSkipThis}>
+                <Text style={cropStyles.skipText}>No crop</Text>
+              </Pressable>
+            )}
+            <View style={cropStyles.footerRight}>
+              {onPrevious ? (
+                <Pressable style={cropStyles.skipButton} onPress={onSkipThis}>
+                  <Text style={cropStyles.skipText}>No crop</Text>
+                </Pressable>
+              ) : null}
+              <Pressable style={cropStyles.confirmButton} onPress={() => onConfirm(cropState)}>
+                <Text style={cropStyles.confirmText}>
+                  {photoNumber < totalPhotos ? `Next →` : 'Create story'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </View>
@@ -1233,25 +1265,44 @@ const cropStyles = StyleSheet.create({
   zoomLabel: { color: TravelColors.text, fontSize: 15, fontWeight: '700', minWidth: 50, textAlign: 'center' },
   footer: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: TravelColors.border,
   },
-  skipButton: {
+  footerRight: {
     flex: 1,
+    flexDirection: 'row',
+    gap: 10,
     alignItems: 'center',
-    justifyContent: 'center',
+  },
+  prevButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     borderRadius: 999,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
     backgroundColor: TravelColors.tintSurface,
   },
-  skipText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  prevText: { color: TravelColors.primary, fontSize: 13, fontWeight: '700' },
+  skipButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    backgroundColor: TravelColors.tintSurface,
+  },
+  skipText: { color: TravelColors.primary, fontSize: 13, fontWeight: '700' },
   confirmButton: {
-    flex: 2,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 999,

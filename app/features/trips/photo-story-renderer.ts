@@ -112,6 +112,7 @@ export function buildPhotoStoryHtml(
 <canvas id="c" width="1080" height="1920"></canvas>
 <script>
 window.runStoryCanvas = async function() {
+  try {
   const PHOTOS      = ${ser(photoBase64s)};
   const TITLE       = ${ser(trip.title)};
   const STATS       = ${ser(statItems)};
@@ -241,7 +242,7 @@ window.runStoryCanvas = async function() {
   const images = await Promise.all(
     PHOTOS.slice(0, 4).map((b64, origIdx) => new Promise(resolve => {
       const img = new Image();
-      const timer = setTimeout(() => resolve(null), 12000);
+      const timer = setTimeout(() => resolve(null), 6000);
       img.onload  = () => { clearTimeout(timer); resolve({ img, origIdx }); };
       img.onerror = () => { clearTimeout(timer); resolve(null); };
       img.src = 'data:image/jpeg;base64,' + b64;
@@ -734,12 +735,17 @@ window.runStoryCanvas = async function() {
   await new Promise(r => requestAnimationFrame(r));
   let dataUrl;
   try {
-    dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+    dataUrl = canvas.toDataURL('image/jpeg', 0.72);
   } catch (e) {
     window.ReactNativeWebView.postMessage('error:canvas_export:' + String(e));
     return;
   }
   window.ReactNativeWebView.postMessage(dataUrl);
+  } catch (outerErr) {
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage('error:uncaught:' + String(outerErr));
+    }
+  }
 };
 </script>
 </body>

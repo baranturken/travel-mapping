@@ -29,8 +29,9 @@ export function computeTripStats(
   trip: TripDetail,
   legRoutes?: Record<string, LegRouteData>,
 ): TripStats {
-  const countries = new Set(trip.stops.map((s) => s.countryName.trim().toLowerCase()));
-  const cities = new Set(trip.stops.map((s) => `${s.cityName.trim().toLowerCase()}:${s.countryName.trim().toLowerCase()}`));
+  const travelStops = trip.stops.filter((s) => !s.isHomeBase);
+  const countries = new Set(travelStops.map((s) => s.countryName.trim().toLowerCase()));
+  const cities = new Set(travelStops.map((s) => `${s.cityName.trim().toLowerCase()}:${s.countryName.trim().toLowerCase()}`));
 
   let dayCount: number | null = null;
   if (trip.startDate && trip.endDate) {
