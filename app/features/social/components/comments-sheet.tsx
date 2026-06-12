@@ -87,6 +87,7 @@ export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
       <Pressable style={styles.backdrop} onPress={onClose} />
       <KeyboardAvoidingView
         style={styles.sheetWrapper}
+        pointerEvents="box-none"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 8 }]}>
           <View style={styles.header}>
@@ -167,17 +168,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 20, 40, 0.4)',
   },
   sheetWrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: TravelColors.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: '75%',
+    height: '85%',
     borderTopWidth: 1,
     borderColor: TravelColors.border,
   },
@@ -200,9 +198,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loadingRow: { paddingVertical: 32, alignItems: 'center' },
-  list: { maxHeight: 340 },
-  listContent: { padding: 16, gap: 14 },
+  loadingRow: { flex: 1, paddingVertical: 32, alignItems: 'center', justifyContent: 'center' },
+  list: { flex: 1 },
+  listContent: { padding: 16, gap: 14, flexGrow: 1 },
   emptyText: {
     color: TravelColors.mutedText,
     fontSize: 14,

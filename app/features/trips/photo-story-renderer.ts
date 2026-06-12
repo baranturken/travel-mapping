@@ -113,6 +113,10 @@ export function buildPhotoStoryHtml(
 <canvas id="c" width="1080" height="1920"></canvas>
 <script>
 window.runStoryCanvas = async function() {
+  // Idempotency guard — the canvas must only render once even if both the
+  // in-HTML auto-trigger and the React Native injected trigger fire.
+  if (window.__storyCanvasStarted) return;
+  window.__storyCanvasStarted = true;
   try {
   const PHOTOS      = ${ser(photoBase64s)};
   const TITLE       = ${ser(trip.title)};
@@ -243,7 +247,7 @@ window.runStoryCanvas = async function() {
   const images = await Promise.all(
     PHOTOS.slice(0, 4).map((b64, origIdx) => new Promise(resolve => {
       const img = new Image();
-      const timer = setTimeout(() => resolve(null), 6000);
+      const timer = setTimeout(() => resolve(null), 15000);
       img.onload  = () => { clearTimeout(timer); resolve({ img, origIdx }); };
       img.onerror = () => { clearTimeout(timer); resolve(null); };
       img.src = 'data:image/jpeg;base64,' + b64;
@@ -842,35 +846,48 @@ window.runStoryCanvas = async function() {
       y += MC + 52;
     }
 
-    // Stop list — clean numbered rows
+    // Stop list — clean numbered rows with a left-aligned transport connector
     {
       const n = STOPS.length;
+      const hasTransport = STOPS.some((s, i) => s.transport && i < n - 1);
       const availH = H - 120 - y;
-      const idealH = n * 74;
-      const sc = idealH > availH ? Math.max(0.5, availH / idealH) : 1;
-      const rowH = Math.round(74 * sc);
+      const idealH = n * 70 + (hasTransport ? (n - 1) * 34 : 0);
+      const sc = idealH > availH ? Math.max(0.46, availH / idealH) : 1;
+      const rowH = Math.round(70 * sc), conH = Math.round(34 * sc);
       const numF = Math.max(15, Math.round(26 * sc)), cityF = Math.max(18, Math.round(36 * sc));
+      const ctryF = Math.max(14, Math.round(26 * sc));
+      const cityX = PAD + Math.round(66 * Math.max(0.7, sc));
       for (let i = 0; i < n; i++) {
         const stop = STOPS[i];
         const baseY = y + Math.round(rowH * 0.62);
+        ctx.textAlign = 'left';
         ctx.font = 'bold ' + numF + 'px sans-serif';
         ctx.fillStyle = ACCENT;
         ctx.fillText(String(i + 1).padStart(2, '0'), PAD, baseY);
         ctx.font = 'bold ' + cityF + 'px Georgia, serif';
         ctx.fillStyle = INK;
-        ctx.fillText(stop.city, PAD + 70, baseY);
-        const cw = ctx.measureText(stop.city).width;
-        ctx.font = Math.max(14, Math.round(26 * sc)) + 'px sans-serif';
+        const cityMaxW = W - PAD - cityX;
+        ctx.fillText(stop.city, cityX, baseY, cityMaxW);
+        const cw = Math.min(ctx.measureText(stop.city).width, cityMaxW);
+        ctx.font = ctryF + 'px sans-serif';
         ctx.fillStyle = SUB;
-        ctx.fillText('— ' + stop.country, PAD + 70 + cw + 18, baseY);
-        if (stop.transport && i < n - 1) {
-          ctx.textAlign = 'right';
-          ctx.fillStyle = 'rgba(33,89,168,0.65)';
-          ctx.font = 'bold ' + Math.max(13, Math.round(24 * sc)) + 'px sans-serif';
-          ctx.fillText(stop.transport, W - PAD, baseY);
-          ctx.textAlign = 'left';
+        const ctryX = cityX + cw + 18;
+        if (ctryX < W - PAD - 40) {
+          ctx.fillText('— ' + stop.country, ctryX, baseY, W - PAD - ctryX);
         }
         y += rowH;
+        if (stop.transport && i < n - 1) {
+          ctx.strokeStyle = 'rgba(33,89,168,0.4)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(PAD + 8, y - Math.round(conH * 0.2));
+          ctx.lineTo(PAD + 8, y + Math.round(conH * 0.5));
+          ctx.stroke();
+          ctx.font = 'bold ' + Math.max(13, Math.round(23 * sc)) + 'px sans-serif';
+          ctx.fillStyle = 'rgba(33,89,168,0.7)';
+          ctx.fillText(stop.transport, cityX, y + Math.round(conH * 0.5), W - PAD - cityX);
+          y += conH;
+        }
       }
     }
 
@@ -1213,21 +1230,42 @@ window.runStoryCanvas = async function() {
   }
 
   // ── export ───────────────────────────────────────────────────────────
+  // Two frames so the canvas backing store is fully committed before we read
+  // it back; a single rAF can be too early for a large single drawImage.
+  await new Promise(r => requestAnimationFrame(r));
   await new Promise(r => requestAnimationFrame(r));
   let dataUrl;
   try {
     dataUrl = canvas.toDataURL('image/jpeg', 0.72);
   } catch (e) {
-    window.ReactNativeWebView.postMessage('error:canvas_export:' + String(e));
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage('error:canvas_export:' + String(e));
     return;
   }
-  window.ReactNativeWebView.postMessage(dataUrl);
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(dataUrl);
   } catch (outerErr) {
     if (window.ReactNativeWebView) {
       window.ReactNativeWebView.postMessage('error:uncaught:' + String(outerErr));
     }
   }
 };
+
+// Self-trigger as soon as the document is ready, independent of the React
+// Native injected trigger. The idempotency guard keeps it to one render.
+(function () {
+  function start() {
+    if (window.runStoryCanvas) {
+      window.runStoryCanvas().catch(function (e) {
+        if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage('error:' + String(e));
+      });
+    }
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(start, 0);
+  } else {
+    window.addEventListener('DOMContentLoaded', start);
+    window.addEventListener('load', start);
+  }
+})();
 </script>
 </body>
 </html>`;

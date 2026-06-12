@@ -127,6 +127,9 @@ export default function TripStoryScreen() {
   const [storyTemplate, setStoryTemplate] = useState<StoryTemplate>('navy');
   const scrollRef = useRef<ScrollView>(null);
 
+  // Sunset arranges photos as up to three polaroids; other templates take four.
+  const maxPhotos = storyTemplate === 'sunset' ? 3 : 4;
+
   const loadStory = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -356,6 +359,13 @@ export default function TripStoryScreen() {
     void generateStory(cropQueue, []);
   }, [cropQueue, generateStory]);
 
+  const handleCropCancel = useCallback(() => {
+    setIsCropOpen(false);
+    setCropQueue([]);
+    setCropCurrentIndex(0);
+    setCropParamsAccumulated([]);
+  }, []);
+
   const handlePhotoStoryRendered = useCallback(
     async (event: { nativeEvent: { data: string } }) => {
       const data = event.nativeEvent.data;
@@ -550,6 +560,7 @@ export default function TripStoryScreen() {
       <PhotoPickerModal
         memories={pickerMemories}
         visible={isPhotoPickerOpen}
+        maxPhotos={maxPhotos}
         onConfirm={handlePickerConfirm}
         onCancel={() => setIsPhotoPickerOpen(false)}
       />
@@ -564,6 +575,7 @@ export default function TripStoryScreen() {
           onConfirm={handleCropConfirm}
           onSkipThis={handleCropSkip}
           onSkipAll={handleCropSkipAll}
+          onCancel={handleCropCancel}
           onPrevious={cropCurrentIndex > 0 ? handleCropPrevious : undefined}
         />
       ) : null}
@@ -576,11 +588,13 @@ export default function TripStoryScreen() {
 function PhotoPickerModal({
   memories,
   visible,
+  maxPhotos,
   onConfirm,
   onCancel,
 }: {
   memories: PickerMemory[];
   visible: boolean;
+  maxPhotos: number;
   onConfirm(selectedUris: string[]): void;
   onCancel(): void;
 }) {
@@ -590,10 +604,15 @@ function PhotoPickerModal({
     if (visible) setSelectedUris([]);
   }, [visible]);
 
+  // If the template's limit shrinks (e.g. switching to Sunset), trim selection.
+  useEffect(() => {
+    setSelectedUris((prev) => (prev.length > maxPhotos ? prev.slice(0, maxPhotos) : prev));
+  }, [maxPhotos]);
+
   const toggle = (uri: string) => {
     setSelectedUris((prev) => {
       if (prev.includes(uri)) return prev.filter((u) => u !== uri);
-      if (prev.length >= 4) return prev;
+      if (prev.length >= maxPhotos) return prev;
       return [...prev, uri];
     });
   };
@@ -607,8 +626,8 @@ function PhotoPickerModal({
               <Text style={pickerStyles.title}>Choose photos</Text>
               <Text style={pickerStyles.subtitle}>
                 {selectedUris.length === 0
-                  ? 'Select up to 4 for your story'
-                  : `${selectedUris.length} of 4 selected`}
+                  ? `Select up to ${maxPhotos} for your story`
+                  : `${selectedUris.length} of ${maxPhotos} selected`}
               </Text>
             </View>
             <Pressable style={pickerStyles.closeButton} onPress={onCancel}>
@@ -620,7 +639,7 @@ function PhotoPickerModal({
             {memories.map((mem) => {
               const orderIndex = selectedUris.indexOf(mem.imageUri);
               const isSelected = orderIndex !== -1;
-              const isDisabled = !isSelected && selectedUris.length >= 4;
+              const isDisabled = !isSelected && selectedUris.length >= maxPhotos;
 
               return (
                 <Pressable
@@ -677,6 +696,7 @@ function CropModal({
   onConfirm,
   onSkipThis,
   onSkipAll,
+  onCancel,
   onPrevious,
 }: {
   uri: string;
@@ -686,6 +706,7 @@ function CropModal({
   onConfirm(params: PhotoCropParams): void;
   onSkipThis(): void;
   onSkipAll(): void;
+  onCancel(): void;
   onPrevious?(): void;
 }) {
   const [cropState, setCropState] = useState<PhotoCropParams>(initialCrop ?? { normX: 0, normY: 0, scale: 1 });
@@ -799,16 +820,24 @@ function CropModal({
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onSkipThis}>
+    <Modal visible animationType="slide" transparent onRequestClose={onCancel}>
       <View style={cropStyles.backdrop}>
         <View style={cropStyles.sheet}>
           <View style={cropStyles.header}>
+            <Pressable
+              style={cropStyles.cancelButton}
+              onPress={onCancel}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel">
+              <Ionicons name="close" size={20} color={TravelColors.text} />
+            </Pressable>
             <View style={cropStyles.headerCopy}>
               <Text style={cropStyles.title}>Crop photo {photoNumber} of {totalPhotos}</Text>
               <Text style={cropStyles.subtitle}>Drag to reposition · Pinch or +/− to zoom</Text>
             </View>
             {totalPhotos > 1 ? (
-              <Pressable onPress={onSkipAll}>
+              <Pressable onPress={onSkipAll} hitSlop={8}>
                 <Text style={cropStyles.skipAllText}>Skip all</Text>
               </Pressable>
             ) : null}
@@ -1263,14 +1292,22 @@ const cropStyles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: TravelColors.border,
   },
-  headerCopy: { gap: 2 },
+  cancelButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TravelColors.tintSurface,
+  },
+  headerCopy: { flex: 1, gap: 2 },
   title: { color: TravelColors.text, fontSize: 17, fontWeight: '700' },
   subtitle: { color: TravelColors.secondaryText, fontSize: 13 },
   skipAllText: { color: TravelColors.primary, fontSize: 14, fontWeight: '600' },
