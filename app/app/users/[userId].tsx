@@ -16,16 +16,12 @@ import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import {
   followUser,
-  getComments,
   getUserProfile,
   getUserTrips,
-  likeTrip,
   unfollowUser,
-  unlikeTrip,
 } from '@/features/social/social-repository';
 import { UserAvatar } from '@/features/social/components/user-avatar';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
-import { CommentsSheet } from '@/features/social/components/comments-sheet';
 import type { FeedTrip, UserProfile } from '@/features/social/types';
 
 export default function UserProfileScreen() {
@@ -36,7 +32,6 @@ export default function UserProfileScreen() {
   const [trips, setTrips] = useState<FeedTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
-  const [commentsTrip, setCommentsTrip] = useState<FeedTrip | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,30 +81,6 @@ export default function UserProfileScreen() {
       Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
     } finally {
       setFollowLoading(false);
-    }
-  };
-
-  const handleLike = async (trip: FeedTrip) => {
-    if (!user) return;
-    const wasLiked = trip.isLikedByMe;
-    setTrips((prev) =>
-      prev.map((t) =>
-        t.id === trip.id
-          ? { ...t, isLikedByMe: !wasLiked, likeCount: t.likeCount + (wasLiked ? -1 : 1) }
-          : t,
-      ),
-    );
-    try {
-      if (wasLiked) await unlikeTrip(trip.id, user.id);
-      else await likeTrip(trip.id, user.id);
-    } catch {
-      setTrips((prev) =>
-        prev.map((t) =>
-          t.id === trip.id
-            ? { ...t, isLikedByMe: wasLiked, likeCount: t.likeCount + (wasLiked ? 1 : -1) }
-            : t,
-        ),
-      );
     }
   };
 
@@ -194,23 +165,18 @@ export default function UserProfileScreen() {
               <FeedTripCard
                 key={trip.id}
                 trip={trip}
-                onLike={() => void handleLike(trip)}
-                onComment={() => setCommentsTrip(trip)}
-                onProfile={() => {}}
+                onPress={() =>
+                  router.push({
+                    pathname: '/trips/shared/[publishedId]',
+                    params: { publishedId: trip.id },
+                  } as any)
+                }
                 hideAuthor
               />
             ))}
           </View>
         )}
       </ScrollView>
-
-      {commentsTrip ? (
-        <CommentsSheet
-          trip={commentsTrip}
-          onClose={() => setCommentsTrip(null)}
-          onCountChange={() => {}}
-        />
-      ) : null}
     </SafeAreaView>
   );
 }

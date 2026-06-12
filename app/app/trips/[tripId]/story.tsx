@@ -44,6 +44,55 @@ type PickerMemory = {
   imageUri: string;
 };
 
+const TEMPLATE_META: {
+  key: StoryTemplate;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  description: string;
+}[] = [
+  {
+    key: 'navy',
+    label: 'Classic',
+    icon: 'albums-outline',
+    description: '',
+  },
+  {
+    key: 'journey',
+    label: 'Journey',
+    icon: 'map-outline',
+    description:
+      'Full-bleed photo background with a floating route map card and stop list. Best with at least one photo selected.',
+  },
+  {
+    key: 'filmstrip',
+    label: 'Film',
+    icon: 'film-outline',
+    description:
+      'Vertical film strip on the left with your photos, trip stats and route minimap on the right.',
+  },
+  {
+    key: 'minimal',
+    label: 'Minimal',
+    icon: 'document-text-outline',
+    description:
+      'Clean, light editorial layout with elegant typography, a photo strip and a large route card.',
+  },
+  {
+    key: 'sunset',
+    label: 'Sunset',
+    icon: 'sunny-outline',
+    description:
+      'Warm sunset gradient with tilted polaroid-style photos and a glowing route card.',
+  },
+  {
+    key: 'passport',
+    label: 'Boarding Pass',
+    icon: 'airplane-outline',
+    description:
+      'Retro boarding-pass ticket with an itinerary manifest, route stamp, photo strip and barcode.',
+  },
+];
+
 // injectedJavaScript is executed by react-native-webview AFTER the
 // ReactNativeWebView bridge is injected — this guarantees the bridge
 // exists when runStoryCanvas calls postMessage.
@@ -389,18 +438,16 @@ export default function TripStoryScreen() {
           <View style={styles.templatePreviewCard}>
             <View style={styles.templatePreviewIcon}>
               <Ionicons
-                name={storyTemplate === 'journey' ? 'map-outline' : 'film-outline'}
+                name={TEMPLATE_META.find((t) => t.key === storyTemplate)?.icon ?? 'image-outline'}
                 size={32}
                 color={TravelColors.primary}
               />
             </View>
             <Text style={styles.templatePreviewTitle}>
-              {storyTemplate === 'journey' ? 'Journey' : 'Film Strip'}
+              {TEMPLATE_META.find((t) => t.key === storyTemplate)?.label}
             </Text>
             <Text style={styles.templatePreviewBody}>
-              {storyTemplate === 'journey'
-                ? 'Full-bleed photo background with a floating route map card and stop list. Best with at least one photo selected.'
-                : 'Vertical film strip on the left with your photos, trip stats and route minimap on the right.'}
+              {TEMPLATE_META.find((t) => t.key === storyTemplate)?.description}
             </Text>
           </View>
         )}
@@ -425,18 +472,18 @@ export default function TripStoryScreen() {
             style={styles.templateChips}
             contentContainerStyle={styles.templateChipsContent}
           >
-            {(['navy', 'journey', 'filmstrip'] as StoryTemplate[]).map((t) => (
+            {TEMPLATE_META.map((t) => (
               <Pressable
-                key={t}
-                style={[styles.templateChip, storyTemplate === t && styles.templateChipActive]}
-                onPress={() => setStoryTemplate(t)}>
+                key={t.key}
+                style={[styles.templateChip, storyTemplate === t.key && styles.templateChipActive]}
+                onPress={() => setStoryTemplate(t.key)}>
                 <Ionicons
-                  name={t === 'navy' ? 'albums-outline' : t === 'journey' ? 'map-outline' : 'film-outline'}
+                  name={t.icon}
                   size={13}
-                  color={storyTemplate === t ? '#ffffff' : TravelColors.primary}
+                  color={storyTemplate === t.key ? '#ffffff' : TravelColors.primary}
                 />
-                <Text style={[styles.templateChipText, storyTemplate === t && styles.templateChipTextActive]}>
-                  {t === 'navy' ? 'Classic' : t === 'journey' ? 'Journey' : 'Film'}
+                <Text style={[styles.templateChipText, storyTemplate === t.key && styles.templateChipTextActive]}>
+                  {t.label}
                 </Text>
               </Pressable>
             ))}

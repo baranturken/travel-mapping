@@ -29,7 +29,7 @@ function createMockDatabase(
 
 describe('migrateDbIfNeeded', () => {
   it('returns early when the database is already at the latest version', async () => {
-    const db = createMockDatabase(5);
+    const db = createMockDatabase(6);
 
     await migrateDbIfNeeded(db as never);
 
@@ -46,7 +46,7 @@ describe('migrateDbIfNeeded', () => {
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining("PRAGMA journal_mode = 'wal';"));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS trips'));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS route_cache'));
-    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 5');
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
   });
 
   it('upgrades version 1 databases through the intermediate schema steps', async () => {
@@ -60,7 +60,7 @@ describe('migrateDbIfNeeded', () => {
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE stops ADD COLUMN is_home_base'));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN start_date'));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN end_date'));
-    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 5');
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
   });
 
   it('creates the route cache table when upgrading from version 2 to 3', async () => {
@@ -73,7 +73,7 @@ describe('migrateDbIfNeeded', () => {
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE stops ADD COLUMN is_home_base'));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN start_date'));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN end_date'));
-    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 5');
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
   });
 
   it('adds the home-base column when upgrading from version 3 to 4', async () => {
@@ -89,7 +89,7 @@ describe('migrateDbIfNeeded', () => {
     expect(db.getAllAsync).toHaveBeenCalledWith('PRAGMA table_info(trips)');
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN start_date'));
     expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN end_date'));
-    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 5');
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
   });
 
   it('skips the home-base ALTER TABLE if the column already exists', async () => {
@@ -101,7 +101,20 @@ describe('migrateDbIfNeeded', () => {
 
     expect(db.getAllAsync).toHaveBeenCalledWith('PRAGMA table_info(stops)');
     expect(db.execAsync).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE stops ADD COLUMN is_home_base'));
-    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 5');
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
+  });
+
+  it('adds the publish columns when upgrading from version 5 to 6', async () => {
+    const db = createMockDatabase(5, {
+      trips: ['id', 'title', 'start_date', 'end_date'],
+    });
+
+    await migrateDbIfNeeded(db as never);
+
+    expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN is_public'));
+    expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN supabase_id'));
+    expect(db.execAsync).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN published_at'));
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
   });
 
   it('skips the trip-date ALTER TABLE calls if the columns already exist', async () => {
@@ -114,6 +127,6 @@ describe('migrateDbIfNeeded', () => {
     expect(db.getAllAsync).toHaveBeenCalledWith('PRAGMA table_info(trips)');
     expect(db.execAsync).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN start_date'));
     expect(db.execAsync).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE trips ADD COLUMN end_date'));
-    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 5');
+    expect(db.execAsync).toHaveBeenCalledWith('PRAGMA user_version = 6');
   });
 });

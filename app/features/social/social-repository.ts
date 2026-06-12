@@ -96,6 +96,19 @@ export async function getRecommendations(userId: string, offset = 0): Promise<Fe
   return rows.map((r) => mapFeedTrip(r, userId, liked));
 }
 
+export async function getPublishedTrip(tripId: string, viewerId: string | null): Promise<FeedTrip | null> {
+  const { data, error } = await supabase
+    .from('published_trips')
+    .select(TRIP_SELECT)
+    .eq('id', tripId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  const liked = await hydrateLikes([row], viewerId);
+  return mapFeedTrip(row, viewerId, liked);
+}
+
 // ─── User trips ───────────────────────────────────────────────────────────────
 
 export async function getUserTrips(userId: string, viewerId: string | null): Promise<FeedTrip[]> {
@@ -117,10 +130,13 @@ export async function getUserTrips(userId: string, viewerId: string | null): Pro
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
 export async function searchProfiles(query: string): Promise<Profile[]> {
+  // Strip characters that have special meaning in PostgREST or-filters / ILIKE patterns
+  const sanitized = query.replace(/[,%_()]/g, '').trim();
+  if (!sanitized) return [];
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .ilike('username', `%${query}%`)
+    .or(`username.ilike.%${sanitized}%,display_name.ilike.%${sanitized}%`)
     .limit(20);
   if (error) throw error;
   return (data ?? []).map((r) => mapProfile(r as Record<string, unknown>));

@@ -10,9 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "bundleIdentifier": "com.baranturken.travelmapping"
     },
     "android": {
+      "package": "com.baranturken.travelmapping",
       "adaptiveIcon": {
         "backgroundColor": "#0a1c3c",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

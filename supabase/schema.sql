@@ -63,7 +63,9 @@ CREATE INDEX idx_trip_comments_trip         ON trip_comments(trip_id, created_at
 -- ─── updated_at trigger ───────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = ''
+AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$;
 
@@ -114,3 +116,21 @@ CREATE POLICY "comments_select_all"  ON trip_comments FOR SELECT USING (true);
 CREATE POLICY "comments_insert_auth" ON trip_comments FOR INSERT
   WITH CHECK (auth.uid() = user_id AND auth.uid() IS NOT NULL);
 CREATE POLICY "comments_delete_own"  ON trip_comments FOR DELETE USING (auth.uid() = user_id);
+
+-- ─── Grants ───────────────────────────────────────────────────────────────────
+-- Required when the project does not auto-expose new tables to the Data API.
+-- RLS still controls which rows are visible/writable; grants only open the door.
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+GRANT SELECT ON profiles        TO anon, authenticated;
+GRANT SELECT ON published_trips TO anon, authenticated;
+GRANT SELECT ON follows         TO anon, authenticated;
+GRANT SELECT ON trip_likes      TO anon, authenticated;
+GRANT SELECT ON trip_comments   TO anon, authenticated;
+
+GRANT INSERT, UPDATE, DELETE ON profiles        TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON published_trips TO authenticated;
+GRANT INSERT, DELETE         ON follows         TO authenticated;
+GRANT INSERT, DELETE         ON trip_likes      TO authenticated;
+GRANT INSERT, DELETE         ON trip_comments   TO authenticated;

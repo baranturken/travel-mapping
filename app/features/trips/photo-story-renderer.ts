@@ -12,12 +12,13 @@ export type PhotoCropParams = {
 
 export type RoutePosition = { x: number; y: number };
 
+// Bottom-right of the canvas, opposite the stop list (which is left-aligned).
 export const DEFAULT_ROUTE_POSITION: RoutePosition = {
   x: 1080 - 380 - 52,
-  y: 52,
+  y: 1340,
 };
 
-export type StoryTemplate = 'navy' | 'journey' | 'filmstrip';
+export type StoryTemplate = 'navy' | 'journey' | 'filmstrip' | 'minimal' | 'sunset' | 'passport';
 
 type StoryOptions = {
   showRoute?: boolean;
@@ -380,23 +381,48 @@ window.runStoryCanvas = async function() {
     ctx.fillText('Made with Travel Mapping', W - PAD, H - 72);
     ctx.textAlign = 'left';
 
-    // Route minimap drawn LAST so it always renders on top
+    // Route minimap drawn LAST so it always renders on top.
+    // Rendered as a frosted-glass card so it reads as a deliberate design
+    // element over both photos and the navy background.
     if (ROUTE_SEGS.length > 0) {
-      const MAP_W = 380, MAP_H = 380, MAP_PAD = 26;
+      const MAP_W = 380, MAP_H = 380, MAP_PAD = 40;
       const MAP_X = ${mapX};
       const MAP_Y = ${mapY};
-      const hasPhotos = valid.length > 0;
-      const routePasses = hasPhotos ? [
-        { width: 12, style: 'rgba(2,5,15,0.9)' },
-        { width: 7,  style: 'rgba(5,20,50,0.7)' },
-        { width: 3,  style: 'rgba(15,37,64,0.95)' },
-      ] : [
-        { width: 12, style: 'rgba(2,8,20,0.85)' },
-        { width: 7,  style: 'rgba(15,60,120,0.6)' },
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.45)';
+      ctx.shadowBlur = 38;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = 'rgba(7,18,36,0.62)';
+      roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = 1.5;
+      roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.stroke();
+
+      // Dot grid inside the card (map-paper effect)
+      ctx.save();
+      roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.clip();
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let gx = MAP_X + 20; gx < MAP_X + MAP_W - 8; gx += 28) {
+        for (let gy = MAP_Y + 20; gy < MAP_Y + MAP_H - 8; gy += 28) {
+          ctx.beginPath(); ctx.arc(gx, gy, 2, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      drawRoute(MAP_X, MAP_Y, MAP_W, MAP_H, MAP_PAD, [
+        { width: 11, style: 'rgba(2,8,20,0.7)' },
+        { width: 6,  style: 'rgba(30,90,170,0.75)' },
         { width: 3,  style: '#74c0fc' },
-      ];
-      const dotInner = hasPhotos ? 'rgba(15,37,64,0.9)' : '#4dabf7';
-      drawRoute(MAP_X, MAP_Y, MAP_W, MAP_H, MAP_PAD, routePasses, 'rgba(2,8,20,0.85)', dotInner);
+      ], 'rgba(2,8,20,0.85)', '#4dabf7');
+
+      ctx.font = 'bold 19px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.letterSpacing = '2px';
+      ctx.fillText('ROUTE', MAP_X + 22, MAP_Y + 36);
+      ctx.letterSpacing = '0px';
     }
   }
 
@@ -729,6 +755,461 @@ window.runStoryCanvas = async function() {
     ctx.textAlign = 'right';
     ctx.fillText('Made with Travel Mapping', W - 28, H - 58);
     ctx.textAlign = 'left';
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // TEMPLATE: MINIMAL
+  // Light editorial layout — paper background, serif title, photo strip,
+  // large route card, clean numbered stop list.
+  // ════════════════════════════════════════════════════════════════════
+  else if (TEMPLATE === 'minimal') {
+    const PAPER = '#f6f3ee', INK = '#1d2935', SUB = 'rgba(29,41,53,0.55)', ACCENT = '#2159a8';
+    const PAD = 84;
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, W, H);
+
+    let y = 130;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillStyle = SUB;
+    ctx.letterSpacing = '6px';
+    ctx.fillText('T R A V E L  M A P P I N G', W / 2, y);
+    ctx.letterSpacing = '0px';
+    y += 44;
+
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(W / 2 - 30, y, 60, 3);
+    y += 66;
+
+    ctx.font = 'bold 84px Georgia, serif';
+    ctx.fillStyle = INK;
+    {
+      const words = TITLE.split(' ');
+      let line = '', lines = [];
+      for (const word of words) {
+        const test = line ? line + ' ' + word : word;
+        if (ctx.measureText(test).width > W - PAD * 2 && line) { lines.push(line); line = word; }
+        else line = test;
+        if (lines.length >= 2) break;
+      }
+      if (line && lines.length < 2) lines.push(line);
+      for (const l of lines) { ctx.fillText(l, W / 2, y); y += 96; }
+    }
+    y += 4;
+
+    if (DATE_RANGE) {
+      ctx.font = 'italic 32px Georgia, serif';
+      ctx.fillStyle = SUB;
+      ctx.fillText(DATE_RANGE, W / 2, y);
+      y += 56;
+    }
+
+    ctx.font = '30px sans-serif';
+    ctx.fillStyle = INK;
+    ctx.fillText(STATS.join('   ·   '), W / 2, y);
+    ctx.textAlign = 'left';
+    y += 52;
+
+    // Photo strip
+    if (valid.length > 0) {
+      const STRIP_H = 430, GAP = 10;
+      const pw = (W - PAD * 2 - GAP * (valid.length - 1)) / valid.length;
+      let px = PAD;
+      for (let i = 0; i < valid.length; i++) {
+        const c = getCrop(validEntries[i].origIdx);
+        clipRect(px, y, pw, STRIP_H, () => coverImage(valid[i], px, y, pw, STRIP_H, c.normX, c.normY, c.scale));
+        px += pw + GAP;
+      }
+      y += STRIP_H + 48;
+    } else {
+      y += 16;
+    }
+
+    // Route card
+    if (ROUTE_SEGS.length > 0) {
+      const MC = 470;
+      const MC_X = (W - MC) / 2;
+      ctx.fillStyle = '#eee9e0';
+      roundRect(MC_X, y, MC, MC, 24); ctx.fill();
+      ctx.strokeStyle = 'rgba(29,41,53,0.16)';
+      ctx.lineWidth = 1.5;
+      roundRect(MC_X, y, MC, MC, 24); ctx.stroke();
+      drawRoute(MC_X, y, MC, MC, 42, [
+        { width: 10, style: 'rgba(29,41,53,0.10)' },
+        { width: 5,  style: 'rgba(33,89,168,0.55)' },
+        { width: 2.5, style: ACCENT },
+      ], '#1a4d96', ACCENT);
+      y += MC + 52;
+    }
+
+    // Stop list — clean numbered rows
+    {
+      const n = STOPS.length;
+      const availH = H - 120 - y;
+      const idealH = n * 74;
+      const sc = idealH > availH ? Math.max(0.5, availH / idealH) : 1;
+      const rowH = Math.round(74 * sc);
+      const numF = Math.max(15, Math.round(26 * sc)), cityF = Math.max(18, Math.round(36 * sc));
+      for (let i = 0; i < n; i++) {
+        const stop = STOPS[i];
+        const baseY = y + Math.round(rowH * 0.62);
+        ctx.font = 'bold ' + numF + 'px sans-serif';
+        ctx.fillStyle = ACCENT;
+        ctx.fillText(String(i + 1).padStart(2, '0'), PAD, baseY);
+        ctx.font = 'bold ' + cityF + 'px Georgia, serif';
+        ctx.fillStyle = INK;
+        ctx.fillText(stop.city, PAD + 70, baseY);
+        const cw = ctx.measureText(stop.city).width;
+        ctx.font = Math.max(14, Math.round(26 * sc)) + 'px sans-serif';
+        ctx.fillStyle = SUB;
+        ctx.fillText('— ' + stop.country, PAD + 70 + cw + 18, baseY);
+        if (stop.transport && i < n - 1) {
+          ctx.textAlign = 'right';
+          ctx.fillStyle = 'rgba(33,89,168,0.65)';
+          ctx.font = 'bold ' + Math.max(13, Math.round(24 * sc)) + 'px sans-serif';
+          ctx.fillText(stop.transport, W - PAD, baseY);
+          ctx.textAlign = 'left';
+        }
+        y += rowH;
+      }
+    }
+
+    ctx.font = '24px sans-serif';
+    ctx.fillStyle = 'rgba(29,41,53,0.32)';
+    ctx.textAlign = 'center';
+    ctx.fillText('Made with Travel Mapping', W / 2, H - 64);
+    ctx.textAlign = 'left';
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // TEMPLATE: SUNSET
+  // Warm gradient background, polaroid-style photos, glass route card.
+  // ════════════════════════════════════════════════════════════════════
+  else if (TEMPLATE === 'sunset') {
+    const PAD = 72;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#241139');
+    grad.addColorStop(0.45, '#6d2a52');
+    grad.addColorStop(0.8, '#c75643');
+    grad.addColorStop(1, '#e89254');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Polaroid photos — up to 3, slightly rotated
+    if (valid.length > 0) {
+      const count = Math.min(3, valid.length);
+      const PW = count === 1 ? 560 : 420, PH = PW + 86;
+      const angles = [-0.055, 0.045, -0.03];
+      const xs = count === 1 ? [(W - PW) / 2]
+        : count === 2 ? [W * 0.12, W * 0.5]
+        : [W * 0.06, W * 0.37, W * 0.62];
+      const ys = count === 1 ? [120] : count === 2 ? [130, 210] : [120, 250, 150];
+      for (let i = 0; i < count; i++) {
+        const c = getCrop(validEntries[i].origIdx);
+        ctx.save();
+        ctx.translate(xs[i] + PW / 2, ys[i] + PH / 2);
+        ctx.rotate(angles[i]);
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 34;
+        ctx.shadowOffsetY = 12;
+        ctx.fillStyle = '#fdfaf4';
+        ctx.fillRect(-PW / 2, -PH / 2, PW, PH);
+        ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+        const inner = PW - 36;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-inner / 2, -PH / 2 + 18, inner, inner);
+        ctx.clip();
+        coverImage(valid[i], -inner / 2, -PH / 2 + 18, inner, inner, c.normX, c.normY, c.scale);
+        ctx.restore();
+        ctx.restore();
+      }
+    }
+
+    let y = valid.length > 0 ? 950 : 220;
+
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillStyle = 'rgba(255,225,190,0.85)';
+    ctx.letterSpacing = '4px';
+    ctx.fillText('✈  TRAVEL MAPPING', PAD, y);
+    ctx.letterSpacing = '0px';
+    y += 24;
+
+    ctx.font = 'bold 92px sans-serif';
+    ctx.fillStyle = '#fff6ec';
+    ctx.shadowColor = 'rgba(40,10,30,0.5)';
+    ctx.shadowBlur = 8;
+    const titleLines = wrapText(TITLE, PAD, y + 88, W - PAD * 2, 104, 2);
+    ctx.shadowBlur = 0;
+    y += 88 + titleLines * 104 + 18;
+
+    if (DATE_RANGE) {
+      ctx.font = '32px sans-serif';
+      ctx.fillStyle = 'rgba(255,240,220,0.8)';
+      ctx.fillText('📅 ' + DATE_RANGE, PAD, y);
+      y += 54;
+    }
+
+    ctx.font = 'bold 30px sans-serif';
+    let sx = PAD;
+    for (const stat of STATS) {
+      const tw = ctx.measureText(stat).width;
+      const ph = 46, pr = 22, pv = 8, pw = tw + pr * 2;
+      if (sx + pw > W - PAD) break;
+      ctx.fillStyle = 'rgba(255,250,244,0.16)';
+      roundRect(sx, y - ph + pv, pw, ph, 23); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,250,244,0.35)';
+      ctx.lineWidth = 1;
+      roundRect(sx, y - ph + pv, pw, ph, 23); ctx.stroke();
+      ctx.fillStyle = '#fff6ec';
+      ctx.fillText(stat, sx + pr, y);
+      sx += pw + 14;
+    }
+    y += 58;
+
+    // Route — warm glass card on the right; stops on the left
+    const listRight = ROUTE_SEGS.length > 0 ? W - PAD - 360 - 36 : W - PAD;
+    if (ROUTE_SEGS.length > 0) {
+      const MC = 360, MC_X = W - PAD - MC, MC_Y = y;
+      ctx.save();
+      ctx.shadowColor = 'rgba(30,8,25,0.5)';
+      ctx.shadowBlur = 34;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = 'rgba(40,12,35,0.45)';
+      roundRect(MC_X, MC_Y, MC, MC, 26); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255,235,210,0.3)';
+      ctx.lineWidth = 1.5;
+      roundRect(MC_X, MC_Y, MC, MC, 26); ctx.stroke();
+      drawRoute(MC_X, MC_Y, MC, MC, 38, [
+        { width: 10, style: 'rgba(30,8,25,0.6)' },
+        { width: 5,  style: 'rgba(255,180,120,0.55)' },
+        { width: 2.5, style: '#ffd9a8' },
+      ], 'rgba(40,12,35,0.8)', '#ffb066');
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillStyle = 'rgba(255,235,210,0.5)';
+      ctx.letterSpacing = '2px';
+      ctx.fillText('ROUTE', MC_X + 20, MC_Y + 32);
+      ctx.letterSpacing = '0px';
+    }
+
+    // Stop list
+    {
+      const n = STOPS.length;
+      const availH = H - 100 - y;
+      const idealH = n * 80 + Math.max(0, n - 1) * 38;
+      const sc = idealH > availH ? Math.max(0.48, availH / idealH) : 1;
+      const rowH = Math.round(80 * sc), conH = Math.round(38 * sc);
+      const dotR = Math.max(11, Math.round(19 * sc));
+      const cityF = Math.max(17, Math.round(34 * sc)), ctryF = Math.max(13, Math.round(26 * sc));
+      const maxW = listRight - PAD - dotR * 2 - 14;
+      for (let i = 0; i < n; i++) {
+        const stop = STOPS[i];
+        const cy = y + Math.round(rowH * 0.42);
+        ctx.fillStyle = '#ffb066';
+        ctx.beginPath(); ctx.arc(PAD + dotR, cy, dotR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#3a1228';
+        ctx.font = 'bold ' + Math.round(dotR * 1.05) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(i + 1), PAD + dotR, cy + Math.round(dotR * 0.38));
+        ctx.textAlign = 'left';
+        ctx.font = 'bold ' + cityF + 'px sans-serif';
+        ctx.fillStyle = '#fff6ec';
+        ctx.fillText(stop.city, PAD + dotR * 2 + 14, y + Math.round(rowH * 0.38), maxW);
+        ctx.font = ctryF + 'px sans-serif';
+        ctx.fillStyle = 'rgba(255,240,220,0.6)';
+        ctx.fillText(stop.country, PAD + dotR * 2 + 14, y + Math.round(rowH * 0.76), maxW);
+        y += rowH;
+        if (stop.transport && i < n - 1) {
+          ctx.fillStyle = 'rgba(255,217,168,0.4)';
+          ctx.fillRect(PAD + dotR - 2, y - 2, 4, Math.round(conH * 0.55));
+          ctx.font = 'bold ' + Math.max(13, Math.round(25 * sc)) + 'px sans-serif';
+          ctx.fillStyle = 'rgba(255,217,168,0.95)';
+          ctx.fillText(stop.transport, PAD + dotR * 2 + 14, y + Math.round(conH * 0.58), maxW);
+          y += conH;
+        }
+      }
+    }
+
+    ctx.font = '22px sans-serif';
+    ctx.fillStyle = 'rgba(255,246,236,0.35)';
+    ctx.textAlign = 'right';
+    ctx.fillText('Made with Travel Mapping', W - PAD, H - 56);
+    ctx.textAlign = 'left';
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // TEMPLATE: PASSPORT (boarding pass)
+  // Ticket aesthetic — dashed frame, mono type, perforation, barcode.
+  // ════════════════════════════════════════════════════════════════════
+  else if (TEMPLATE === 'passport') {
+    const BG2 = '#10283f', CARD = '#f4efe6', INK = '#22324a', ACCENT = '#b3541e';
+    const MONO = '"Courier New", monospace';
+    ctx.fillStyle = BG2;
+    ctx.fillRect(0, 0, W, H);
+
+    // Ticket card
+    const TX = 52, TY = 96, TW = W - 104, TH = H - 192;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 48;
+    ctx.shadowOffsetY = 14;
+    ctx.fillStyle = CARD;
+    roundRect(TX, TY, TW, TH, 22); ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(34,50,74,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12, 8]);
+    roundRect(TX + 22, TY + 22, TW - 44, TH - 44, 14); ctx.stroke();
+    ctx.setLineDash([]);
+
+    const L2 = TX + 64, R2 = TX + TW - 64;
+    let y = TY + 130;
+
+    ctx.font = 'bold 30px ' + MONO;
+    ctx.fillStyle = ACCENT;
+    ctx.fillText('★ TRAVEL MAPPING — BOARDING PASS', L2, y);
+    y += 64;
+
+    ctx.font = 'bold 76px ' + MONO;
+    ctx.fillStyle = INK;
+    const titleLines = wrapText(TITLE.toUpperCase(), L2, y + 70, R2 - L2, 88, 2);
+    y += 70 + titleLines * 88 + 8;
+
+    if (DATE_RANGE) {
+      ctx.font = '30px ' + MONO;
+      ctx.fillStyle = 'rgba(34,50,74,0.65)';
+      ctx.fillText('DATE: ' + DATE_RANGE, L2, y);
+      y += 50;
+    }
+
+    // FROM → TO airport style
+    if (STOPS.length >= 2) {
+      y += 30;
+      const fromCity = STOPS[0].city.slice(0, 12).toUpperCase();
+      const toCity = STOPS[STOPS.length - 1].city.slice(0, 12).toUpperCase();
+      ctx.font = '26px ' + MONO;
+      ctx.fillStyle = 'rgba(34,50,74,0.55)';
+      ctx.fillText('FROM', L2, y);
+      ctx.textAlign = 'right';
+      ctx.fillText('TO', R2, y);
+      ctx.textAlign = 'left';
+      y += 56;
+      ctx.font = 'bold 60px ' + MONO;
+      ctx.fillStyle = INK;
+      ctx.fillText(fromCity, L2, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(toCity, R2, y);
+      ctx.textAlign = 'left';
+      ctx.textAlign = 'center';
+      ctx.font = '46px sans-serif';
+      ctx.fillStyle = ACCENT;
+      ctx.fillText('✈', (L2 + R2) / 2, y - 6);
+      ctx.textAlign = 'left';
+      y += 44;
+    }
+
+    ctx.font = 'bold 27px ' + MONO;
+    ctx.fillStyle = 'rgba(34,50,74,0.8)';
+    ctx.fillText(STATS.join('  |  '), L2, y);
+    y += 36;
+
+    // Perforation divider
+    {
+      ctx.strokeStyle = 'rgba(34,50,74,0.3)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 9]);
+      ctx.beginPath();
+      ctx.moveTo(TX + 30, y); ctx.lineTo(TX + TW - 30, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = BG2;
+      ctx.beginPath(); ctx.arc(TX, y, 26, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(TX + TW, y, 26, 0, Math.PI * 2); ctx.fill();
+      y += 56;
+    }
+
+    // Route map + photos row
+    const segTop = y;
+    if (ROUTE_SEGS.length > 0) {
+      const MC = 350;
+      ctx.fillStyle = '#ece5d8';
+      roundRect(R2 - MC, segTop, MC, MC, 18); ctx.fill();
+      ctx.strokeStyle = 'rgba(34,50,74,0.25)';
+      ctx.lineWidth = 1.5;
+      roundRect(R2 - MC, segTop, MC, MC, 18); ctx.stroke();
+      drawRoute(R2 - MC, segTop, MC, MC, 34, [
+        { width: 9, style: 'rgba(34,50,74,0.12)' },
+        { width: 4.5, style: 'rgba(179,84,30,0.5)' },
+        { width: 2.5, style: ACCENT },
+      ], INK, ACCENT);
+    }
+
+    // Stop manifest (left of map)
+    {
+      const n = STOPS.length;
+      const listW = ROUTE_SEGS.length > 0 ? (R2 - L2) - 350 - 40 : R2 - L2;
+      const availH = TY + TH - 320 - segTop;
+      const idealH = n * 64;
+      const sc = idealH > availH ? Math.max(0.5, availH / idealH) : 1;
+      const rowH = Math.round(64 * sc);
+      const f = Math.max(15, Math.round(28 * sc));
+      let ly = segTop + 16;
+      ctx.font = 'bold ' + Math.max(16, Math.round(24 * sc)) + 'px ' + MONO;
+      ctx.fillStyle = 'rgba(34,50,74,0.5)';
+      ctx.fillText('ITINERARY', L2, ly);
+      ly += Math.round(rowH * 0.8);
+      for (let i = 0; i < n; i++) {
+        const stop = STOPS[i];
+        ctx.font = 'bold ' + f + 'px ' + MONO;
+        ctx.fillStyle = ACCENT;
+        ctx.fillText(String(i + 1).padStart(2, '0'), L2, ly);
+        ctx.fillStyle = INK;
+        ctx.fillText(stop.city.toUpperCase(), L2 + f * 2.2, ly, listW - f * 2.2);
+        ly += rowH;
+      }
+    }
+
+    // Photos strip near bottom
+    let stripBottom = TY + TH - 150;
+    if (valid.length > 0) {
+      const PH2 = 290, GAP = 12;
+      const py = stripBottom - PH2;
+      const pw = ((R2 - L2) - GAP * (valid.length - 1)) / valid.length;
+      let px = L2;
+      for (let i = 0; i < valid.length; i++) {
+        const c = getCrop(validEntries[i].origIdx);
+        ctx.save();
+        roundRect(px, py, pw, PH2, 14); ctx.clip();
+        coverImage(valid[i], px, py, pw, PH2, c.normX, c.normY, c.scale);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(34,50,74,0.3)';
+        ctx.lineWidth = 1.5;
+        roundRect(px, py, pw, PH2, 14); ctx.stroke();
+        px += pw + GAP;
+      }
+    }
+
+    // Barcode
+    {
+      const by = TY + TH - 118, bh = 64;
+      let bx = L2;
+      let seed = 7;
+      while (bx < R2 - 8) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        const bw = 3 + (seed % 9);
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        if (seed % 3 !== 0) {
+          ctx.fillStyle = INK;
+          ctx.fillRect(bx, by, bw, bh);
+        }
+        bx += bw + 4;
+      }
+      ctx.font = '20px ' + MONO;
+      ctx.fillStyle = 'rgba(34,50,74,0.5)';
+      ctx.fillText('MADE WITH TRAVEL MAPPING', L2, by + bh + 30);
+    }
   }
 
   // ── export ───────────────────────────────────────────────────────────

@@ -14,9 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
-import { getFeed, getRecommendations, likeTrip, unlikeTrip } from '@/features/social/social-repository';
+import { getFeed, getRecommendations } from '@/features/social/social-repository';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
-import { CommentsSheet } from '@/features/social/components/comments-sheet';
 import type { FeedTrip } from '@/features/social/types';
 
 const PAGE_SIZE = 20;
@@ -30,7 +29,6 @@ export default function FeedScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [commentsTrip, setCommentsTrip] = useState<FeedTrip | null>(null);
   const [isRecommended, setIsRecommended] = useState(false);
 
   const loadFeed = useCallback(async (offset = 0, append = false) => {
@@ -77,41 +75,6 @@ export default function FeedScreen() {
     setLoadingMore(true);
     await loadFeed(trips.length, true);
     setLoadingMore(false);
-  };
-
-  const handleLike = async (trip: FeedTrip) => {
-    if (!user) return;
-    const wasLiked = trip.isLikedByMe;
-    setTrips((prev) =>
-      prev.map((t) =>
-        t.id === trip.id
-          ? { ...t, isLikedByMe: !wasLiked, likeCount: t.likeCount + (wasLiked ? -1 : 1) }
-          : t,
-      ),
-    );
-    try {
-      if (wasLiked) {
-        await unlikeTrip(trip.id, user.id);
-      } else {
-        await likeTrip(trip.id, user.id);
-      }
-    } catch {
-      setTrips((prev) =>
-        prev.map((t) =>
-          t.id === trip.id
-            ? { ...t, isLikedByMe: wasLiked, likeCount: t.likeCount + (wasLiked ? 1 : -1) }
-            : t,
-        ),
-      );
-    }
-  };
-
-  const handleCommentCountChange = (tripId: string, delta: number) => {
-    setTrips((prev) =>
-      prev.map((t) =>
-        t.id === tripId ? { ...t, commentCount: Math.max(0, t.commentCount + delta) } : t,
-      ),
-    );
   };
 
   if (loading) {
@@ -183,22 +146,18 @@ export default function FeedScreen() {
         renderItem={({ item }) => (
           <FeedTripCard
             trip={item}
-            onLike={() => void handleLike(item)}
-            onComment={() => setCommentsTrip(item)}
+            onPress={() =>
+              router.push({
+                pathname: '/trips/shared/[publishedId]',
+                params: { publishedId: item.id },
+              } as any)
+            }
             onProfile={() =>
               router.push({ pathname: '/users/[userId]', params: { userId: item.userId } } as any)
             }
           />
         )}
       />
-
-      {commentsTrip ? (
-        <CommentsSheet
-          trip={commentsTrip}
-          onClose={() => setCommentsTrip(null)}
-          onCountChange={(delta) => handleCommentCountChange(commentsTrip.id, delta)}
-        />
-      ) : null}
     </SafeAreaView>
   );
 }
