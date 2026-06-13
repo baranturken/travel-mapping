@@ -22,6 +22,11 @@ import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
 import { fetchRouteMapBase64 } from '@/features/trips/geoapify-map';
+import {
+  PublishTripModal,
+  type PublishablePhoto,
+  type PublishSelection,
+} from '@/features/trips/components/publish-trip-modal';
 import { TripMapWebView, type LegRouteData } from '@/features/trips/components/trip-map-webview';
 import {
   formatTripDateRange,
@@ -64,6 +69,7 @@ export default function TripDetailScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [legRoutes, setLegRoutes] = useState<Record<string, LegRouteData>>({});
 
@@ -127,15 +133,13 @@ export default function TripDetailScreen() {
 
   // Renders the story cover in the hidden WebView and resolves with base64 JPEG.
   // Guarded so only one render runs at a time; concurrent callers share it.
-  const renderStoryCover = useCallback(async (): Promise<string | null> => {
+  const renderStoryCover = useCallback(async (coverUris: string[]): Promise<string | null> => {
     if (!trip) return null;
     if (coverInFlightRef.current) return coverInFlightRef.current;
 
     const work = (async () => {
       const photoBase64s: string[] = [];
-      const memoryUris = trip.stops
-        .flatMap((s) => s.memories.map((m) => m.imageUri))
-        .slice(0, 4);
+      const memoryUris = coverUris.slice(0, 4);
       for (const uri of memoryUris) {
         try {
           const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
@@ -187,8 +191,9 @@ export default function TripDetailScreen() {
     if (!hasPhotos) return;
     if (preparedCoverRef.current?.signature === coverSignature) return;
     let cancelled = false;
+    const allUris = trip.stops.flatMap((s) => s.memories.map((m) => m.imageUri));
     void (async () => {
-      const base64 = await renderStoryCover();
+      const base64 = await renderStoryCover(allUris);
       if (!cancelled && base64) {
         preparedCoverRef.current = { signature: coverSignature, base64 };
       }
@@ -260,31 +265,32 @@ export default function TripDetailScreen() {
     }
   }, [isDuplicating, repository, router, trip]);
 
+  // All photo memories across stops, used to populate the publish picker.
+  const publishMemories: PublishablePhoto[] = useMemo(
+    () =>
+      trip
+        ? trip.stops.flatMap((s) =>
+            s.memories.map((m) => ({
+              id: m.id,
+              imageUri: m.imageUri,
+              caption: m.caption,
+              cityName: s.cityName,
+              stopLabel: `${s.cityName}, ${s.countryName}`,
+            })),
+          )
+        : [],
+    [trip],
+  );
+
   const handlePublishTrip = useCallback(() => {
     if (!trip || !user || isPublishing) return;
+    setPublishModalOpen(true);
+  }, [trip, user, isPublishing]);
 
-    const alreadyPublished = Boolean(trip.supabaseId);
-
-    Alert.alert(
-      alreadyPublished ? 'Update published trip' : 'Publish trip',
-      alreadyPublished
-        ? 'Re-sync this trip and its photos to update what others can see. Choose visibility:'
-        : 'Your trip photos will be uploaded so others can see them. Choose who can see this trip:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Public',
-          onPress: () => void doPublish(true),
-        },
-        {
-          text: 'Private (link only)',
-          onPress: () => void doPublish(false),
-        },
-      ],
-    );
-
-    async function doPublish(isPublic: boolean) {
+  const runPublish = useCallback(
+    async (selection: PublishSelection) => {
       if (!trip || !user) return;
+      setPublishModalOpen(false);
       try {
         setIsPublishing(true);
         const stopsJson = trip.stops.map((s) => ({
@@ -301,24 +307,33 @@ export default function TripDetailScreen() {
           transportLabel: l.transportLabel,
         }));
 
-        const localPhotos = trip.stops.flatMap((s) =>
-          s.memories.map((m) => ({
-            id: m.id,
-            imageUri: m.imageUri,
-            caption: m.caption,
-            cityName: s.cityName,
-          })),
-        );
+        // Only the user-selected photos, with the highlight first so it becomes
+        // the post's cover photo (photosJson[0]).
+        const selectedSet = new Set(selection.selectedIds);
+        const chosen = publishMemories.filter((m) => selectedSet.has(m.id));
+        chosen.sort((a, b) => {
+          if (a.id === selection.highlightId) return -1;
+          if (b.id === selection.highlightId) return 1;
+          return 0;
+        });
+        const localPhotos = chosen.map((m) => ({
+          id: m.id,
+          imageUri: m.imageUri,
+          caption: m.caption,
+          cityName: m.cityName,
+        }));
         const photosJson = await uploadTripPhotos(user.id, trip.id, localPhotos);
 
-        // Reuse the pre-rendered cover when available; otherwise render now.
+        // Story cover from the selected photos (highlight first). Reuse the
+        // pre-rendered cover only when the full default set was kept.
         let coverImageUrl: string | null = null;
         if (localPhotos.length > 0) {
+          const keptAll = chosen.length === publishMemories.length;
           const cached =
-            preparedCoverRef.current?.signature === coverSignature
+            keptAll && preparedCoverRef.current?.signature === coverSignature
               ? preparedCoverRef.current.base64
               : null;
-          const base64 = cached ?? (await renderStoryCover());
+          const base64 = cached ?? (await renderStoryCover(localPhotos.map((p) => p.imageUri)));
           if (base64) {
             coverImageUrl = await uploadStoryCover(user.id, trip.id, base64);
           }
@@ -334,27 +349,27 @@ export default function TripDetailScreen() {
           legsJson,
           photosJson,
           coverImageUrl,
-          isPublic,
+          isPublic: selection.isPublic,
         });
 
         const publishedAt = new Date().toISOString();
-        await repository.setTripPublishStatus(trip.id, supabaseId, isPublic, publishedAt);
+        await repository.setTripPublishStatus(trip.id, supabaseId, selection.isPublic, publishedAt);
         setTrip((prev) =>
-          prev ? { ...prev, supabaseId, isPublic, publishedAt } : null,
+          prev ? { ...prev, supabaseId, isPublic: selection.isPublic, publishedAt } : null,
         );
 
-        const visibilityLine = isPublic
+        const visibilityLine = selection.isPublic
           ? 'This trip is now public on your profile.'
           : 'This trip is saved privately (link only).';
         let photoLine = '';
-        if (localPhotos.length === 0) {
+        if (chosen.length === 0) {
           photoLine =
-            '\n\nNo photos were attached — add photo memories to your stops, then publish again to show them on the post.';
+            '\n\nNo photos were attached — add photo memories to your stops, then publish again to feature them on the post.';
         } else if (photosJson.length === 0) {
           photoLine =
             '\n\nYour photos could not be uploaded (the originals may no longer be accessible on this device). Re-add them to the stops and try again.';
         } else {
-          photoLine = `\n\n${photosJson.length} ${photosJson.length === 1 ? 'photo' : 'photos'} uploaded${coverImageUrl ? ' and a story cover was created.' : '.'}`;
+          photoLine = `\n\n${photosJson.length} ${photosJson.length === 1 ? 'photo' : 'photos'} on the post${coverImageUrl ? ' · story cover created.' : '.'}`;
         }
         Alert.alert('Published', visibilityLine + photoLine);
       } catch (err) {
@@ -362,8 +377,9 @@ export default function TripDetailScreen() {
       } finally {
         setIsPublishing(false);
       }
-    }
-  }, [trip, user, isPublishing, repository, coverSignature, renderStoryCover]);
+    },
+    [trip, user, repository, coverSignature, renderStoryCover, publishMemories],
+  );
 
   const handleUnpublishTrip = useCallback(() => {
     if (!trip?.supabaseId || isPublishing) return;
@@ -439,6 +455,14 @@ export default function TripDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: trip.title }} />
+      <PublishTripModal
+        visible={publishModalOpen}
+        memories={publishMemories}
+        alreadyPublished={Boolean(trip.supabaseId)}
+        busy={isPublishing}
+        onCancel={() => setPublishModalOpen(false)}
+        onConfirm={(selection) => void runPublish(selection)}
+      />
       {coverHtml ? (
         <View style={styles.hiddenRenderer} pointerEvents="none">
           <WebView

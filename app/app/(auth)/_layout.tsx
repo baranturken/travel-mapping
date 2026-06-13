@@ -6,7 +6,7 @@ export default function AuthLayout() {
   const { session, loading, profile } = useAuth();
 
   if (!loading && session && profile) {
-    return <Redirect href={'/(tabs)/trips' as Href} />;
+    return <Redirect href={'/(tabs)/feed' as Href} />;
   }
 
   return (

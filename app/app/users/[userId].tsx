@@ -114,7 +114,7 @@ export default function UserProfileScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           {profile.bannerUrl ? (
-            <Image source={{ uri: profile.bannerUrl }} style={styles.banner} />
+            <Image source={{ uri: profile.bannerUrl }} style={styles.banner} resizeMode="cover" />
           ) : null}
           <View style={styles.headerRow}>
             <UserAvatar profile={profile} size={64} />
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   banner: {
-    height: 96,
+    aspectRatio: 3,
     marginTop: -20,
     marginHorizontal: -20,
     marginBottom: 2,

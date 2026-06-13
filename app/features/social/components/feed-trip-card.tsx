@@ -79,21 +79,7 @@ export function FeedTripCard({ trip, onPress, onProfile, hideAuthor = false }: P
         disabled={!onPress}
         accessibilityRole={onPress ? 'button' : undefined}
         accessibilityLabel={onPress ? `Open trip ${trip.title}` : undefined}>
-        {trip.coverImageUrl ? (
-          <View style={styles.coverWrap}>
-            <Image source={{ uri: trip.coverImageUrl }} style={styles.storyCover} resizeMode="cover" />
-            <View style={styles.storyBadge}>
-              <Ionicons name="sparkles" size={11} color="#ffffff" />
-              <Text style={styles.coverBadgeText}>Story</Text>
-            </View>
-            {trip.photosJson.length > 0 ? (
-              <View style={styles.coverBadge}>
-                <Ionicons name="images" size={12} color="#ffffff" />
-                <Text style={styles.coverBadgeText}>{trip.photosJson.length}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : trip.photosJson.length > 0 ? (
+        {trip.photosJson.length > 0 ? (
           <View style={styles.coverWrap}>
             <Image source={{ uri: trip.photosJson[0].url }} style={styles.cover} />
             {trip.photosJson.length > 1 ? (
@@ -102,6 +88,14 @@ export function FeedTripCard({ trip, onPress, onProfile, hideAuthor = false }: P
                 <Text style={styles.coverBadgeText}>{trip.photosJson.length}</Text>
               </View>
             ) : null}
+          </View>
+        ) : trip.coverImageUrl ? (
+          <View style={styles.coverWrap}>
+            <Image source={{ uri: trip.coverImageUrl }} style={styles.storyCover} resizeMode="cover" />
+            <View style={styles.storyBadge}>
+              <Ionicons name="sparkles" size={11} color="#ffffff" />
+              <Text style={styles.coverBadgeText}>Story</Text>
+            </View>
           </View>
         ) : null}
 

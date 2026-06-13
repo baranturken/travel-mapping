@@ -24,5 +24,5 @@ export default function IndexRedirect() {
     return <Redirect href={'/(auth)/profile-setup' as Href} />;
   }
 
-  return <Redirect href={'/(tabs)/trips' as Href} />;
+  return <Redirect href={'/(tabs)/feed' as Href} />;
 }

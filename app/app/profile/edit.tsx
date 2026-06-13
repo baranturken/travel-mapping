@@ -87,10 +87,11 @@ export default function EditProfileScreen() {
         Alert.alert('Permission needed', 'Allow photo access to choose a banner.');
         return;
       }
+      // No allowsEditing here: iOS forces a square crop that doesn't match the
+      // wide banner, which misleads the user. Instead they pick the full photo
+      // and the live preview below shows exactly how it will be cropped (cover).
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [3, 1],
         quality: 0.9,
       });
       if (result.canceled || !result.assets[0]) return;
@@ -156,7 +157,11 @@ export default function EditProfileScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Pressable style={styles.bannerSection} onPress={handlePickBanner} disabled={uploadingBanner}>
             {localBannerUri ?? bannerUrl ? (
-              <Image source={{ uri: localBannerUri ?? bannerUrl ?? '' }} style={styles.bannerImage} />
+              <Image
+                source={{ uri: localBannerUri ?? bannerUrl ?? '' }}
+                style={styles.bannerImage}
+                resizeMode="cover"
+              />
             ) : (
               <View style={styles.bannerPlaceholder} />
             )}
@@ -258,7 +263,7 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 20, gap: 20 },
   bannerSection: {
-    height: 130,
+    aspectRatio: 3,
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: TravelColors.tintSurface,
@@ -266,7 +271,7 @@ const styles = StyleSheet.create({
     borderColor: TravelColors.border,
     justifyContent: 'flex-end',
   },
-  bannerImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  bannerImage: StyleSheet.absoluteFillObject,
   bannerPlaceholder: { ...StyleSheet.absoluteFillObject, backgroundColor: TravelColors.primary, opacity: 0.18 },
   bannerOverlay: {
     flexDirection: 'row',

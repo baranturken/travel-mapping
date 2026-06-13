@@ -28,20 +28,20 @@ export default function TabsLayout() {
         headerTitleStyle: { fontWeight: '700' },
       }}>
       <Tabs.Screen
-        name="trips"
-        options={{
-          title: 'My Trips',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="feed"
         options={{
           title: 'Feed',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="trips"
+        options={{
+          title: 'My Trips',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map-outline" size={size} color={color} />
           ),
         }}
       />

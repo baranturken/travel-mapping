@@ -100,7 +100,7 @@ export default function ProfileScreen() {
         <View style={styles.profileCard}>
           <View style={styles.banner}>
             {profile.bannerUrl ? (
-              <Image source={{ uri: profile.bannerUrl }} style={styles.bannerImage} />
+              <Image source={{ uri: profile.bannerUrl }} style={styles.bannerImage} resizeMode="cover" />
             ) : null}
             <Pressable
               style={styles.bannerIconButton}
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   banner: {
-    height: 86,
+    aspectRatio: 3,
     backgroundColor: TravelColors.primary,
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
   },
-  bannerImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  bannerImage: StyleSheet.absoluteFillObject,
   bannerIconButton: {
     width: 34,
     height: 34,
