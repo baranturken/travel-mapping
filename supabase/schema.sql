@@ -23,6 +23,7 @@ CREATE TABLE published_trips (
   stops_json    JSONB NOT NULL DEFAULT '[]',
   legs_json     JSONB NOT NULL DEFAULT '[]',
   photos_json   JSONB NOT NULL DEFAULT '[]',
+  cover_image_url TEXT,
   is_public     BOOLEAN DEFAULT TRUE NOT NULL,
   published_at  TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   updated_at    TIMESTAMPTZ DEFAULT NOW() NOT NULL,

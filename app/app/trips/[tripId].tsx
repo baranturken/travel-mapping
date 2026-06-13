@@ -1,6 +1,8 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,9 +16,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
+import { WebView } from 'react-native-webview';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
+import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
 import { TripMapWebView, type LegRouteData } from '@/features/trips/components/trip-map-webview';
 import {
   formatTripDateRange,
@@ -38,7 +42,15 @@ import {
   type TripStop,
 } from '@/features/trips/types';
 import { publishTrip, unpublishTrip } from '@/features/social/social-repository';
-import { deleteTripPhotos, uploadTripPhotos } from '@/features/social/trip-photo-upload';
+import {
+  deleteTripPhotos,
+  uploadStoryCover,
+  uploadTripPhotos,
+} from '@/features/social/trip-photo-upload';
+
+// JS injected after the WebView bridge is ready to kick off canvas rendering.
+const COVER_TRIGGER_JS =
+  'if(window.runStoryCanvas){window.runStoryCanvas().catch(function(e){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage("error:"+String(e));});}true;';
 
 export default function TripDetailScreen() {
   const router = useRouter();
@@ -53,6 +65,18 @@ export default function TripDetailScreen() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [legRoutes, setLegRoutes] = useState<Record<string, LegRouteData>>({});
+
+  // ── Story-cover rendering (hidden WebView) ────────────────────────────────
+  // A 9:16 "story" image is rendered once and reused as the post hero. We
+  // pre-render it in the background after the trip loads so tapping Publish is
+  // fast ("instant publish"); the result lives only in memory and is discarded
+  // when the screen unmounts.
+  const [coverHtml, setCoverHtml] = useState<string | null>(null);
+  const coverWebViewRef = useRef<WebView>(null);
+  const coverResolveRef = useRef<((b64: string | null) => void) | null>(null);
+  const coverInFlightRef = useRef<Promise<string | null> | null>(null);
+  const preparedCoverRef = useRef<{ signature: string; base64: string } | null>(null);
+  const coverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadTrip = useCallback(async () => {
     setIsLoading(true);
@@ -80,6 +104,102 @@ export default function TripDetailScreen() {
     useCallback(() => {
       void loadTrip();
     }, [loadTrip]),
+  );
+
+  const coverSignature = trip
+    ? `${trip.id}:${trip.updatedAt}:${trip.stops.reduce((n, s) => n + s.memories.length, 0)}:${Object.keys(legRoutes).length}`
+    : '';
+
+  // Resolve the pending cover render with the base64 the canvas produced (or null).
+  const handleCoverMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    const data = event.nativeEvent.data;
+    const resolve = coverResolveRef.current;
+    coverResolveRef.current = null;
+    if (coverTimeoutRef.current) {
+      clearTimeout(coverTimeoutRef.current);
+      coverTimeoutRef.current = null;
+    }
+    setCoverHtml(null);
+    const base64 = data.startsWith('data:image') ? data.split(',')[1] ?? null : null;
+    resolve?.(base64);
+  }, []);
+
+  // Renders the story cover in the hidden WebView and resolves with base64 JPEG.
+  // Guarded so only one render runs at a time; concurrent callers share it.
+  const renderStoryCover = useCallback(async (): Promise<string | null> => {
+    if (!trip) return null;
+    if (coverInFlightRef.current) return coverInFlightRef.current;
+
+    const work = (async () => {
+      const photoBase64s: string[] = [];
+      const memoryUris = trip.stops
+        .flatMap((s) => s.memories.map((m) => m.imageUri))
+        .slice(0, 4);
+      for (const uri of memoryUris) {
+        try {
+          const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
+            uri,
+            [{ resize: { width: 960 } }],
+            { compress: 0.78, format: ImageManipulator.SaveFormat.JPEG },
+          );
+          photoBase64s.push(
+            await FileSystem.readAsStringAsync(jpegUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            }),
+          );
+        } catch {
+          // Skip photos that fail to encode.
+        }
+      }
+
+      const stats = computeTripStats(trip, legRoutes);
+      const html = buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, {
+        showRoute: true,
+        template: 'navy',
+      });
+
+      return await new Promise<string | null>((resolve) => {
+        coverResolveRef.current = resolve;
+        coverTimeoutRef.current = setTimeout(() => {
+          coverResolveRef.current = null;
+          setCoverHtml(null);
+          resolve(null);
+        }, 30000);
+        setCoverHtml(html);
+      });
+    })();
+
+    coverInFlightRef.current = work;
+    try {
+      return await work;
+    } finally {
+      coverInFlightRef.current = null;
+    }
+  }, [legRoutes, trip]);
+
+  // Background pre-render: warm the cover so Publish doesn't have to wait.
+  useEffect(() => {
+    if (!trip || trip.supabaseId) return; // skip if already published
+    const hasPhotos = trip.stops.some((s) => s.memories.length > 0);
+    if (!hasPhotos) return;
+    if (preparedCoverRef.current?.signature === coverSignature) return;
+    let cancelled = false;
+    void (async () => {
+      const base64 = await renderStoryCover();
+      if (!cancelled && base64) {
+        preparedCoverRef.current = { signature: coverSignature, base64 };
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [trip, coverSignature, renderStoryCover]);
+
+  useEffect(
+    () => () => {
+      if (coverTimeoutRef.current) clearTimeout(coverTimeoutRef.current);
+    },
+    [],
   );
 
   const handleDeleteTrip = useCallback(() => {
@@ -188,6 +308,19 @@ export default function TripDetailScreen() {
         );
         const photosJson = await uploadTripPhotos(user.id, trip.id, localPhotos);
 
+        // Reuse the pre-rendered cover when available; otherwise render now.
+        let coverImageUrl: string | null = null;
+        if (localPhotos.length > 0) {
+          const cached =
+            preparedCoverRef.current?.signature === coverSignature
+              ? preparedCoverRef.current.base64
+              : null;
+          const base64 = cached ?? (await renderStoryCover());
+          if (base64) {
+            coverImageUrl = await uploadStoryCover(user.id, trip.id, base64);
+          }
+        }
+
         const supabaseId = await publishTrip({
           localId: trip.id,
           userId: user.id,
@@ -197,6 +330,7 @@ export default function TripDetailScreen() {
           stopsJson,
           legsJson,
           photosJson,
+          coverImageUrl,
           isPublic,
         });
 
@@ -212,7 +346,7 @@ export default function TripDetailScreen() {
         setIsPublishing(false);
       }
     }
-  }, [trip, user, isPublishing, repository]);
+  }, [trip, user, isPublishing, repository, coverSignature, renderStoryCover]);
 
   const handleUnpublishTrip = useCallback(() => {
     if (!trip?.supabaseId || isPublishing) return;
@@ -288,6 +422,19 @@ export default function TripDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: trip.title }} />
+      {coverHtml ? (
+        <View style={styles.hiddenRenderer} pointerEvents="none">
+          <WebView
+            source={{ html: coverHtml }}
+            onLoadEnd={() => coverWebViewRef.current?.injectJavaScript(COVER_TRIGGER_JS)}
+            ref={coverWebViewRef}
+            onMessage={handleCoverMessage}
+            style={styles.hiddenWebView}
+            javaScriptEnabled
+            originWhitelist={['*']}
+          />
+        </View>
+      ) : null}
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           <Text style={styles.eyebrow}>Saved itinerary</Text>
@@ -679,6 +826,8 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 18,
   },
+  hiddenRenderer: { position: 'absolute', left: -2000, top: -3000, width: 1080, height: 1920 },
+  hiddenWebView: { flex: 1 },
   centeredState: {
     flex: 1,
     justifyContent: 'center',

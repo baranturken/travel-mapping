@@ -14,7 +14,12 @@ type AuthContextValue = {
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
-  saveProfile(data: { username: string; displayName: string; bio?: string }): Promise<void>;
+  saveProfile(data: {
+    username: string;
+    displayName: string;
+    bio?: string;
+    avatarUrl?: string | null;
+  }): Promise<void>;
   refreshProfile(): Promise<void>;
 };
 
@@ -95,15 +100,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
   };
 
-  const saveProfile = async (data: { username: string; displayName: string; bio?: string }) => {
+  const saveProfile = async (data: {
+    username: string;
+    displayName: string;
+    bio?: string;
+    avatarUrl?: string | null;
+  }) => {
     if (!session?.user) throw new Error('Not authenticated');
-    const { error } = await supabase.from('profiles').upsert({
+    const row: Record<string, unknown> = {
       id: session.user.id,
       username: data.username.trim().toLowerCase(),
       display_name: data.displayName.trim(),
       bio: data.bio?.trim() || null,
       updated_at: new Date().toISOString(),
-    });
+    };
+    // Only touch avatar_url when the caller explicitly provides it, so editing
+    // other fields never clears an existing avatar.
+    if (data.avatarUrl !== undefined) row.avatar_url = data.avatarUrl;
+    const { error } = await supabase.from('profiles').upsert(row);
     if (error) throw error;
     await loadProfile(session.user.id);
   };

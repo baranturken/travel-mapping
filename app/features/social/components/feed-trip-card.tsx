@@ -79,7 +79,21 @@ export function FeedTripCard({ trip, onPress, onProfile, hideAuthor = false }: P
         disabled={!onPress}
         accessibilityRole={onPress ? 'button' : undefined}
         accessibilityLabel={onPress ? `Open trip ${trip.title}` : undefined}>
-        {trip.photosJson.length > 0 ? (
+        {trip.coverImageUrl ? (
+          <View style={styles.coverWrap}>
+            <Image source={{ uri: trip.coverImageUrl }} style={styles.storyCover} resizeMode="cover" />
+            <View style={styles.storyBadge}>
+              <Ionicons name="sparkles" size={11} color="#ffffff" />
+              <Text style={styles.coverBadgeText}>Story</Text>
+            </View>
+            {trip.photosJson.length > 0 ? (
+              <View style={styles.coverBadge}>
+                <Ionicons name="images" size={12} color="#ffffff" />
+                <Text style={styles.coverBadgeText}>{trip.photosJson.length}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : trip.photosJson.length > 0 ? (
           <View style={styles.coverWrap}>
             <Image source={{ uri: trip.photosJson[0].url }} style={styles.cover} />
             {trip.photosJson.length > 1 ? (
@@ -208,6 +222,23 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   cover: { width: '100%', height: 200, backgroundColor: TravelColors.tintSurface },
+  storyCover: {
+    width: '100%',
+    aspectRatio: 4 / 5,
+    backgroundColor: TravelColors.tintSurface,
+  },
+  storyBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(31,94,168,0.92)',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
   coverBadge: {
     position: 'absolute',
     top: 10,

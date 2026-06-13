@@ -39,6 +39,7 @@ export type FeedTrip = {
   stopsJson: StopSummary[];
   legsJson: LegSummary[];
   photosJson: TripPhoto[];
+  coverImageUrl: string | null;
   isPublic: boolean;
   publishedAt: string;
   updatedAt: string;

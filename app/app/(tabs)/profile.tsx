@@ -100,7 +100,7 @@ export default function ProfileScreen() {
           <View style={styles.banner}>
             <Pressable
               style={styles.bannerIconButton}
-              onPress={() => router.push('/(auth)/profile-setup' as Href)}
+              onPress={() => router.push('/profile/edit' as Href)}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Edit profile">

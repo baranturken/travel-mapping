@@ -147,6 +147,17 @@ export default function SharedTripScreen() {
           </View>
         </View>
 
+        {trip.coverImageUrl ? (
+          <View style={styles.storyCard}>
+            <Image
+              source={{ uri: trip.coverImageUrl }}
+              style={styles.storyCover}
+              resizeMode="contain"
+              accessibilityLabel="Trip story"
+            />
+          </View>
+        ) : null}
+
         {trip.photosJson.length > 0 ? (
           <View style={styles.gallery}>
             {trip.photosJson.map((photo, i) => (
@@ -294,6 +305,18 @@ const styles = StyleSheet.create({
     borderColor: TravelColors.border,
   },
   metaPillText: { color: TravelColors.primary, fontSize: 12, fontWeight: '700' },
+  storyCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#0f2540',
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+  },
+  storyCover: {
+    width: '100%',
+    aspectRatio: 9 / 16,
+    backgroundColor: '#0f2540',
+  },
   gallery: {
     flexDirection: 'row',
     flexWrap: 'wrap',

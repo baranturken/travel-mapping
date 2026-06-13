@@ -1,0 +1,259 @@
+import { Stack, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { TravelColors } from '@/constants/theme';
+import { useAuth } from '@/features/auth/auth-context';
+import { uploadAvatar } from '@/features/social/trip-photo-upload';
+import { UserAvatar } from '@/features/social/components/user-avatar';
+
+export default function EditProfileScreen() {
+  const router = useRouter();
+  const { user, profile, saveProfile } = useAuth();
+
+  const [username, setUsername] = useState(profile?.username ?? '');
+  const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
+  const [bio, setBio] = useState(profile?.bio ?? '');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatarUrl ?? null);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  if (!profile || !user) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={TravelColors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const previewProfile = {
+    displayName: displayName.trim() || profile.displayName,
+    avatarUrl: localAvatarUri ?? avatarUrl,
+  };
+
+  const handlePickAvatar = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to choose a profile picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets[0]) return;
+
+      const uri = result.assets[0].uri;
+      setLocalAvatarUri(uri);
+      setUploadingAvatar(true);
+      const url = await uploadAvatar(user.id, uri);
+      setAvatarUrl(url);
+    } catch (err) {
+      setLocalAvatarUri(null);
+      Alert.alert('Could not update photo', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleSave = async () => {
+    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedName = displayName.trim();
+
+    if (!/^[a-z0-9_]{3,20}$/.test(trimmedUsername)) {
+      Alert.alert('Invalid username', 'Use 3–20 characters: lowercase letters, numbers, or underscores.');
+      return;
+    }
+    if (!trimmedName) {
+      Alert.alert('Display name required', 'Add a display name.');
+      return;
+    }
+    if (uploadingAvatar) {
+      Alert.alert('Hold on', 'Your photo is still uploading. Try again in a moment.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await saveProfile({
+        username: trimmedUsername,
+        displayName: trimmedName,
+        bio: bio.trim(),
+        avatarUrl,
+      });
+      router.back();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Please try again.';
+      if (msg.toLowerCase().includes('username') || msg.toLowerCase().includes('unique')) {
+        Alert.alert('Username taken', 'That username is already in use. Try another.');
+      } else {
+        Alert.alert('Could not save profile', msg);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <Stack.Screen options={{ title: 'Edit profile' }} />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.avatarSection}>
+            <Pressable style={styles.avatarPressable} onPress={handlePickAvatar} disabled={uploadingAvatar}>
+              <UserAvatar profile={previewProfile} size={104} />
+              <View style={styles.avatarBadge}>
+                {uploadingAvatar ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Ionicons name="camera" size={16} color="#ffffff" />
+                )}
+              </View>
+            </Pressable>
+            <Pressable onPress={handlePickAvatar} disabled={uploadingAvatar}>
+              <Text style={styles.changePhotoText}>
+                {uploadingAvatar ? 'Uploading…' : 'Change profile photo'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={styles.input}
+                value={username}
+                onChangeText={setUsername}
+                placeholder="e.g. baran_travels"
+                placeholderTextColor={TravelColors.mutedText}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!saving}
+              />
+              <Text style={styles.hint}>3–20 characters. Letters, numbers, and underscores only.</Text>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Display name</Text>
+              <TextInput
+                style={styles.input}
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="e.g. Baran"
+                placeholderTextColor={TravelColors.mutedText}
+                editable={!saving}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Bio</Text>
+              <TextInput
+                style={[styles.input, styles.bioInput]}
+                value={bio}
+                onChangeText={setBio}
+                placeholder="Tell travelers a bit about yourself…"
+                placeholderTextColor={TravelColors.mutedText}
+                multiline
+                numberOfLines={3}
+                editable={!saving}
+              />
+            </View>
+          </View>
+
+          <Pressable
+            style={[styles.primaryButton, saving && styles.buttonDisabled]}
+            onPress={handleSave}
+            disabled={saving}>
+            {saving ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Save changes</Text>
+            )}
+          </Pressable>
+          <Pressable style={styles.cancelButton} onPress={() => router.back()} disabled={saving}>
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: TravelColors.background },
+  flex: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  content: { padding: 20, gap: 20 },
+  avatarSection: { alignItems: 'center', gap: 10, paddingTop: 8 },
+  avatarPressable: { position: 'relative' },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: TravelColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: TravelColors.background,
+  },
+  changePhotoText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  card: {
+    backgroundColor: TravelColors.surface,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    gap: 16,
+  },
+  field: { gap: 6 },
+  label: { color: TravelColors.text, fontSize: 14, fontWeight: '700' },
+  hint: { color: TravelColors.mutedText, fontSize: 12, lineHeight: 16 },
+  input: {
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    color: TravelColors.text,
+    backgroundColor: TravelColors.background,
+  },
+  bioInput: { minHeight: 80, textAlignVertical: 'top' },
+  primaryButton: {
+    backgroundColor: TravelColors.primary,
+    borderRadius: 999,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  buttonDisabled: { opacity: 0.6 },
+  primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  cancelButton: { alignItems: 'center', paddingVertical: 8 },
+  cancelButtonText: { color: TravelColors.mutedText, fontSize: 14, fontWeight: '600' },
+});

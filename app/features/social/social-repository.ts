@@ -29,6 +29,7 @@ function mapFeedTrip(row: Record<string, unknown>, userId: string | null, likedI
     stopsJson: (row.stops_json as StopSummary[]) ?? [],
     legsJson: (row.legs_json as LegSummary[]) ?? [],
     photosJson: (row.photos_json as TripPhoto[]) ?? [],
+    coverImageUrl: (row.cover_image_url as string | null) ?? null,
     isPublic: row.is_public as boolean,
     publishedAt: row.published_at as string,
     updatedAt: row.updated_at as string,
@@ -229,25 +230,29 @@ export async function publishTrip(params: {
   stopsJson: StopSummary[];
   legsJson: LegSummary[];
   photosJson: TripPhoto[];
+  coverImageUrl?: string | null;
   isPublic: boolean;
 }): Promise<string> {
+  const row: Record<string, unknown> = {
+    local_id: params.localId,
+    user_id: params.userId,
+    title: params.title,
+    start_date: params.startDate,
+    end_date: params.endDate,
+    stops_json: params.stopsJson,
+    legs_json: params.legsJson,
+    photos_json: params.photosJson,
+    is_public: params.isPublic,
+    updated_at: new Date().toISOString(),
+  };
+  // Only overwrite the cover when a freshly rendered one was provided, so a
+  // failed render on re-publish never blanks the existing cover image.
+  if (params.coverImageUrl !== undefined && params.coverImageUrl !== null) {
+    row.cover_image_url = params.coverImageUrl;
+  }
   const { data, error } = await supabase
     .from('published_trips')
-    .upsert(
-      {
-        local_id: params.localId,
-        user_id: params.userId,
-        title: params.title,
-        start_date: params.startDate,
-        end_date: params.endDate,
-        stops_json: params.stopsJson,
-        legs_json: params.legsJson,
-        photos_json: params.photosJson,
-        is_public: params.isPublic,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,local_id' },
-    )
+    .upsert(row, { onConflict: 'user_id,local_id' })
     .select('id')
     .single();
   if (error) throw error;
