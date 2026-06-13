@@ -20,6 +20,19 @@ export const DEFAULT_ROUTE_POSITION: RoutePosition = {
 
 export type StoryTemplate = 'navy' | 'journey' | 'filmstrip' | 'minimal' | 'sunset' | 'passport';
 
+// How many photos each template is designed to display. `min` gates the photo
+// picker (Sunset needs exactly 3 polaroids to look right); `max` caps both the
+// picker selection and how many photos the canvas decodes. This is the single
+// source of truth shared by the renderer and the photo picker UI.
+export const TEMPLATE_PHOTO_LIMITS: Record<StoryTemplate, { min: number; max: number }> = {
+  navy: { min: 0, max: 4 },
+  journey: { min: 1, max: 4 },
+  filmstrip: { min: 0, max: 4 },
+  minimal: { min: 1, max: 4 },
+  sunset: { min: 3, max: 3 },
+  passport: { min: 0, max: 4 },
+};
+
 type StoryOptions = {
   showRoute?: boolean;
   cropParams?: PhotoCropParams[];
@@ -59,6 +72,10 @@ export function buildPhotoStoryHtml(
   const cropParams = options?.cropParams ?? [];
   const template = options?.template ?? 'navy';
   const mapUrl = showRoute ? options?.mapUrl ?? null : null;
+  // Never decode more photos than the template can place (also a safety net if
+  // a caller forgets to cap the selection upstream).
+  const maxPhotos = TEMPLATE_PHOTO_LIMITS[template].max;
+  const photos = photoBase64s.slice(0, maxPhotos);
 
   const statItems: string[] = [
     `🌍 ${stats.countryCount} ${stats.countryCount === 1 ? 'country' : 'countries'}`,
@@ -124,7 +141,7 @@ window.runStoryCanvas = async function() {
   if (window.__storyCanvasStarted) return;
   window.__storyCanvasStarted = true;
   try {
-  const PHOTOS      = ${ser(photoBase64s)};
+  const PHOTOS      = ${ser(photos)};
   const TITLE       = ${ser(trip.title)};
   const STATS       = ${ser(statItems)};
   const STOPS       = ${ser(stopEntries)};
@@ -246,13 +263,25 @@ window.runStoryCanvas = async function() {
     }
   }
 
+  // Cover-fit the Geoapify basemap into a rounded card. Returns true when it
+  // actually painted (MAP_IMG loaded), so each template can fall back to its
+  // drawn polyline when the map is unavailable.
+  function drawBasemap(x, y, w, h, r) {
+    if (!MAP_IMG) return false;
+    ctx.save();
+    roundRect(x, y, w, h, r); ctx.clip();
+    coverImage(MAP_IMG, x, y, w, h, 0, 0, 1);
+    ctx.restore();
+    return true;
+  }
+
   // ── background ───────────────────────────────────────────────────────
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, W, H);
 
   // ── load photos ──────────────────────────────────────────────────────
   const images = await Promise.all(
-    PHOTOS.slice(0, 4).map((b64, origIdx) => new Promise(resolve => {
+    PHOTOS.slice(0, ${maxPhotos}).map((b64, origIdx) => new Promise(resolve => {
       const img = new Image();
       const timer = setTimeout(() => resolve(null), 15000);
       img.onload  = () => { clearTimeout(timer); resolve({ img, origIdx }); };
@@ -264,7 +293,11 @@ window.runStoryCanvas = async function() {
   const valid = validEntries.map(e => e.img);
 
   // ── load route basemap (optional) ────────────────────────────────────
-  // Bounded by a timeout so a slow/blocked map never stalls the whole story.
+  // Every template paints this Geoapify basemap into its route card (falling
+  // back to the drawn polyline if it fails to load). Bounded by a timeout so a
+  // slow/blocked map never stalls the whole story. Geoapify sends
+  // access-control-allow-origin:* and we request it with crossOrigin=anonymous,
+  // so the canvas stays exportable (toDataURL won't taint).
   let MAP_IMG = null;
   if (MAP_URL) {
     MAP_IMG = await new Promise(resolve => {
@@ -541,8 +574,35 @@ window.runStoryCanvas = async function() {
     }
     y += 52;
 
+    // ── Extra photos ──
+    // Journey uses the first photo as the full-bleed background; the remaining
+    // selected photos appear here as rounded thumbnails so every picked photo
+    // is actually shown (not just the first).
+    if (valid.length > 1) {
+      const THUMB = 158, TGAP = 16;
+      for (let i = 1; i < valid.length; i++) {
+        const tx = PAD + (i - 1) * (THUMB + TGAP);
+        if (tx + THUMB > W - PAD) break;
+        const c = getCrop(validEntries[i].origIdx);
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 18;
+        ctx.shadowOffsetY = 6;
+        roundRect(tx, y, THUMB, THUMB, 18); ctx.fill();
+        ctx.restore();
+        ctx.save();
+        roundRect(tx, y, THUMB, THUMB, 18); ctx.clip();
+        coverImage(valid[i], tx, y, THUMB, THUMB, c.normX, c.normY, c.scale);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 3;
+        roundRect(tx, y, THUMB, THUMB, 18); ctx.stroke();
+      }
+      y += THUMB + 40;
+    }
+
     // ── Route card (white sticker floating over photo) ──
-    if (ROUTE_SEGS.length > 0) {
+    if (ROUTE_SEGS.length > 0 || MAP_IMG) {
       const MC_SIZE = 580;
       const MC_X = (W - MC_SIZE) / 2;
       const MC_Y = Math.max(710, y + 56);
@@ -555,28 +615,30 @@ window.runStoryCanvas = async function() {
       roundRect(MC_X, MC_Y, MC_SIZE, MC_SIZE, 30); ctx.fill();
       ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
-      // Clip route + grid to card
-      ctx.save();
-      roundRect(MC_X, MC_Y, MC_SIZE, MC_SIZE, 30); ctx.clip();
+      // Prefer the real basemap; fall back to the drawn route + dot grid.
+      if (!drawBasemap(MC_X, MC_Y, MC_SIZE, MC_SIZE, 30)) {
+        ctx.save();
+        roundRect(MC_X, MC_Y, MC_SIZE, MC_SIZE, 30); ctx.clip();
 
-      ctx.fillStyle = '#edf2fa';
-      ctx.fillRect(MC_X, MC_Y, MC_SIZE, MC_SIZE);
+        ctx.fillStyle = '#edf2fa';
+        ctx.fillRect(MC_X, MC_Y, MC_SIZE, MC_SIZE);
 
-      // Dot grid (map-paper effect)
-      ctx.fillStyle = 'rgba(60,100,165,0.13)';
-      for (let gx = MC_X + 22; gx < MC_X + MC_SIZE - 10; gx += 30) {
-        for (let gy = MC_Y + 22; gy < MC_Y + MC_SIZE - 10; gy += 30) {
-          ctx.beginPath(); ctx.arc(gx, gy, 2.5, 0, Math.PI * 2); ctx.fill();
+        // Dot grid (map-paper effect)
+        ctx.fillStyle = 'rgba(60,100,165,0.13)';
+        for (let gx = MC_X + 22; gx < MC_X + MC_SIZE - 10; gx += 30) {
+          for (let gy = MC_Y + 22; gy < MC_Y + MC_SIZE - 10; gy += 30) {
+            ctx.beginPath(); ctx.arc(gx, gy, 2.5, 0, Math.PI * 2); ctx.fill();
+          }
         }
+
+        drawRoute(MC_X, MC_Y, MC_SIZE, MC_SIZE, 38, [
+          { width: 11, style: 'rgba(15,37,64,0.18)' },
+          { width: 5.5, style: 'rgba(15,50,110,0.62)' },
+          { width: 2.5, style: '#2159a8' },
+        ], '#1a4d96', '#2159a8');
+
+        ctx.restore();
       }
-
-      drawRoute(MC_X, MC_Y, MC_SIZE, MC_SIZE, 38, [
-        { width: 11, style: 'rgba(15,37,64,0.18)' },
-        { width: 5.5, style: 'rgba(15,50,110,0.62)' },
-        { width: 2.5, style: '#2159a8' },
-      ], '#1a4d96', '#2159a8');
-
-      ctx.restore();
 
       ctx.font = 'bold 21px sans-serif';
       ctx.fillStyle = 'rgba(30,80,165,0.42)';
@@ -735,12 +797,18 @@ window.runStoryCanvas = async function() {
 
     // Route minimap on right panel
     const MAP_H_val = Math.min(420, H - y - 510);
-    if (ROUTE_SEGS.length > 0 && MAP_H_val > 80) {
-      drawRoute(L, y, CONTENT_W, MAP_H_val, 22, [
-        { width: 10, style: 'rgba(2,8,20,0.85)' },
-        { width: 5, style: 'rgba(15,60,120,0.6)' },
-        { width: 2.5, style: '#74c0fc' },
-      ], 'rgba(2,8,20,0.85)', '#4dabf7');
+    if ((ROUTE_SEGS.length > 0 || MAP_IMG) && MAP_H_val > 80) {
+      if (drawBasemap(L, y, CONTENT_W, MAP_H_val, 18)) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1.5;
+        roundRect(L, y, CONTENT_W, MAP_H_val, 18); ctx.stroke();
+      } else {
+        drawRoute(L, y, CONTENT_W, MAP_H_val, 22, [
+          { width: 10, style: 'rgba(2,8,20,0.85)' },
+          { width: 5, style: 'rgba(15,60,120,0.6)' },
+          { width: 2.5, style: '#74c0fc' },
+        ], 'rgba(2,8,20,0.85)', '#4dabf7');
+      }
       y += MAP_H_val + 32;
     } else {
       y += 18;
@@ -863,19 +931,21 @@ window.runStoryCanvas = async function() {
     }
 
     // Route card
-    if (ROUTE_SEGS.length > 0) {
+    if (ROUTE_SEGS.length > 0 || MAP_IMG) {
       const MC = 470;
       const MC_X = (W - MC) / 2;
       ctx.fillStyle = '#eee9e0';
       roundRect(MC_X, y, MC, MC, 24); ctx.fill();
+      if (!drawBasemap(MC_X, y, MC, MC, 24)) {
+        drawRoute(MC_X, y, MC, MC, 42, [
+          { width: 10, style: 'rgba(29,41,53,0.10)' },
+          { width: 5,  style: 'rgba(33,89,168,0.55)' },
+          { width: 2.5, style: ACCENT },
+        ], '#1a4d96', ACCENT);
+      }
       ctx.strokeStyle = 'rgba(29,41,53,0.16)';
       ctx.lineWidth = 1.5;
       roundRect(MC_X, y, MC, MC, 24); ctx.stroke();
-      drawRoute(MC_X, y, MC, MC, 42, [
-        { width: 10, style: 'rgba(29,41,53,0.10)' },
-        { width: 5,  style: 'rgba(33,89,168,0.55)' },
-        { width: 2.5, style: ACCENT },
-      ], '#1a4d96', ACCENT);
       y += MC + 52;
     }
 
@@ -1018,8 +1088,8 @@ window.runStoryCanvas = async function() {
     y += 58;
 
     // Route — warm glass card on the right; stops on the left
-    const listRight = ROUTE_SEGS.length > 0 ? W - PAD - 360 - 36 : W - PAD;
-    if (ROUTE_SEGS.length > 0) {
+    const listRight = (ROUTE_SEGS.length > 0 || MAP_IMG) ? W - PAD - 360 - 36 : W - PAD;
+    if (ROUTE_SEGS.length > 0 || MAP_IMG) {
       const MC = 360, MC_X = W - PAD - MC, MC_Y = y;
       ctx.save();
       ctx.shadowColor = 'rgba(30,8,25,0.5)';
@@ -1028,14 +1098,16 @@ window.runStoryCanvas = async function() {
       ctx.fillStyle = 'rgba(40,12,35,0.45)';
       roundRect(MC_X, MC_Y, MC, MC, 26); ctx.fill();
       ctx.restore();
+      if (!drawBasemap(MC_X, MC_Y, MC, MC, 26)) {
+        drawRoute(MC_X, MC_Y, MC, MC, 38, [
+          { width: 10, style: 'rgba(30,8,25,0.6)' },
+          { width: 5,  style: 'rgba(255,180,120,0.55)' },
+          { width: 2.5, style: '#ffd9a8' },
+        ], 'rgba(40,12,35,0.8)', '#ffb066');
+      }
       ctx.strokeStyle = 'rgba(255,235,210,0.3)';
       ctx.lineWidth = 1.5;
       roundRect(MC_X, MC_Y, MC, MC, 26); ctx.stroke();
-      drawRoute(MC_X, MC_Y, MC, MC, 38, [
-        { width: 10, style: 'rgba(30,8,25,0.6)' },
-        { width: 5,  style: 'rgba(255,180,120,0.55)' },
-        { width: 2.5, style: '#ffd9a8' },
-      ], 'rgba(40,12,35,0.8)', '#ffb066');
       ctx.font = 'bold 18px sans-serif';
       ctx.fillStyle = 'rgba(255,235,210,0.5)';
       ctx.letterSpacing = '2px';
@@ -1182,24 +1254,27 @@ window.runStoryCanvas = async function() {
 
     // Route map + photos row
     const segTop = y;
-    if (ROUTE_SEGS.length > 0) {
+    const hasRouteCard = ROUTE_SEGS.length > 0 || MAP_IMG;
+    if (hasRouteCard) {
       const MC = 350;
       ctx.fillStyle = '#ece5d8';
       roundRect(R2 - MC, segTop, MC, MC, 18); ctx.fill();
+      if (!drawBasemap(R2 - MC, segTop, MC, MC, 18)) {
+        drawRoute(R2 - MC, segTop, MC, MC, 34, [
+          { width: 9, style: 'rgba(34,50,74,0.12)' },
+          { width: 4.5, style: 'rgba(179,84,30,0.5)' },
+          { width: 2.5, style: ACCENT },
+        ], INK, ACCENT);
+      }
       ctx.strokeStyle = 'rgba(34,50,74,0.25)';
       ctx.lineWidth = 1.5;
       roundRect(R2 - MC, segTop, MC, MC, 18); ctx.stroke();
-      drawRoute(R2 - MC, segTop, MC, MC, 34, [
-        { width: 9, style: 'rgba(34,50,74,0.12)' },
-        { width: 4.5, style: 'rgba(179,84,30,0.5)' },
-        { width: 2.5, style: ACCENT },
-      ], INK, ACCENT);
     }
 
     // Stop manifest (left of map)
     {
       const n = STOPS.length;
-      const listW = ROUTE_SEGS.length > 0 ? (R2 - L2) - 350 - 40 : R2 - L2;
+      const listW = hasRouteCard ? (R2 - L2) - 350 - 40 : R2 - L2;
       const availH = TY + TH - 320 - segTop;
       const idealH = n * 64;
       const sc = idealH > availH ? Math.max(0.5, availH / idealH) : 1;

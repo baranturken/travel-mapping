@@ -34,6 +34,7 @@ import type { TripDetail } from '@/features/trips/types';
 import {
   buildPhotoStoryHtml,
   DEFAULT_ROUTE_POSITION,
+  TEMPLATE_PHOTO_LIMITS,
   type PhotoCropParams,
   type RoutePosition,
   type StoryTemplate,
@@ -131,8 +132,9 @@ export default function TripStoryScreen() {
   const [storyTemplate, setStoryTemplate] = useState<StoryTemplate>('navy');
   const scrollRef = useRef<ScrollView>(null);
 
-  // Sunset arranges photos as up to three polaroids; other templates take four.
-  const maxPhotos = storyTemplate === 'sunset' ? 3 : 4;
+  // Each template declares how many photos it can place (Sunset needs exactly
+  // three polaroids; others take up to four). Drives the picker's gating.
+  const { min: minPhotos, max: maxPhotos } = TEMPLATE_PHOTO_LIMITS[storyTemplate];
 
   const loadStory = useCallback(async () => {
     setIsLoading(true);
@@ -565,6 +567,7 @@ export default function TripStoryScreen() {
       <PhotoPickerModal
         memories={pickerMemories}
         visible={isPhotoPickerOpen}
+        minPhotos={minPhotos}
         maxPhotos={maxPhotos}
         onConfirm={handlePickerConfirm}
         onCancel={() => setIsPhotoPickerOpen(false)}
@@ -592,12 +595,14 @@ export default function TripStoryScreen() {
 function PhotoPickerModal({
   memories,
   visible,
+  minPhotos,
   maxPhotos,
   onConfirm,
   onCancel,
 }: {
   memories: PickerMemory[];
   visible: boolean;
+  minPhotos: number;
   maxPhotos: number;
   onConfirm(selectedUris: string[]): void;
   onCancel(): void;
@@ -612,6 +617,18 @@ function PhotoPickerModal({
   useEffect(() => {
     setSelectedUris((prev) => (prev.length > maxPhotos ? prev.slice(0, maxPhotos) : prev));
   }, [maxPhotos]);
+
+  const exactCount = minPhotos === maxPhotos ? maxPhotos : null;
+  const meetsMinimum = selectedUris.length >= minPhotos && selectedUris.length > 0;
+  const canConfirm = meetsMinimum;
+  // Templates that require photos (min > 0) shouldn't offer "share without photos".
+  const allowSkip = minPhotos === 0;
+
+  const subtitle = exactCount
+    ? `${selectedUris.length} of ${exactCount} selected — this template needs exactly ${exactCount}`
+    : selectedUris.length === 0
+      ? `Select up to ${maxPhotos} for your story`
+      : `${selectedUris.length} of ${maxPhotos} selected`;
 
   const toggle = (uri: string) => {
     setSelectedUris((prev) => {
@@ -629,11 +646,7 @@ function PhotoPickerModal({
           <View style={pickerStyles.header}>
             <View style={pickerStyles.headerCopy}>
               <Text style={pickerStyles.title}>Choose photos</Text>
-              <Text style={pickerStyles.subtitle}>
-                {selectedUris.length === 0
-                  ? `Select up to ${maxPhotos} for your story`
-                  : `${selectedUris.length} of ${maxPhotos} selected`}
-              </Text>
+              <Text style={pickerStyles.subtitle}>{subtitle}</Text>
             </View>
             <Pressable style={pickerStyles.closeButton} onPress={onCancel}>
               <Ionicons name="close" size={20} color={TravelColors.text} />
@@ -671,17 +684,23 @@ function PhotoPickerModal({
 
           <View style={pickerStyles.footer}>
             <Pressable
-              style={[pickerStyles.confirmButton, selectedUris.length === 0 && pickerStyles.confirmDisabled]}
-              disabled={selectedUris.length === 0}
+              style={[pickerStyles.confirmButton, !canConfirm && pickerStyles.confirmDisabled]}
+              disabled={!canConfirm}
               onPress={() => onConfirm(selectedUris)}>
               <Ionicons name="images-outline" size={18} color="#ffffff" />
               <Text style={pickerStyles.confirmText}>
-                {selectedUris.length === 0 ? 'Select photos first' : 'Crop & create story'}
+                {selectedUris.length === 0
+                  ? 'Select photos first'
+                  : exactCount && selectedUris.length < exactCount
+                    ? `Select ${exactCount - selectedUris.length} more`
+                    : 'Crop & create story'}
               </Text>
             </Pressable>
-            <Pressable style={pickerStyles.skipButton} onPress={() => onConfirm([])}>
-              <Text style={pickerStyles.skipText}>Share without photos</Text>
-            </Pressable>
+            {allowSkip ? (
+              <Pressable style={pickerStyles.skipButton} onPress={() => onConfirm([])}>
+                <Text style={pickerStyles.skipText}>Share without photos</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>

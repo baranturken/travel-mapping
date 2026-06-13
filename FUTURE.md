@@ -44,17 +44,25 @@ section. This is a backlog, not a commitment of order.
   the app name and styling. Supabase Auth → Email Templates (edit subject + HTML).
   For production deliverability, configure a custom SMTP sender (e.g. Resend) and
   a verified sending domain.
+- **Restrict the Geoapify key:** `EXPO_PUBLIC_GEOAPIFY_KEY` is necessarily shipped
+  in the client (static-map URLs). Before launch, lock it down in the Geoapify
+  dashboard with allowed-referrer/domain restrictions and a usage cap so a leaked
+  key can't be abused for billing.
 
 ## Media & story polish
 
 - ✅ **Route lines on the story map:** the Geoapify basemap now draws the
   polyline between stops (not just markers).
-- Roll the **Geoapify cropped basemap** route output into the other story
-  templates (currently only the Classic/navy template; others still draw line
-  routes).
-- **Custom banner cropper:** a real wide-aspect crop UI (iOS `allowsEditing`
-  forces a square crop that doesn't match the banner). For now the banner is
-  picked uncropped and cover-fit on display.
+- ✅ **Geoapify basemap on every template:** all six story templates now paint
+  the real cropped basemap into their route card (falling back to the drawn
+  polyline if the map can't load), not just Classic/navy.
+- ✅ **Custom banner cropper:** real 3:1 pan/pinch crop sheet
+  (`features/social/components/banner-crop-modal.tsx`) replacing the iOS
+  square-crop limitation.
+- ✅ **Per-template photo rules:** `TEMPLATE_PHOTO_LIMITS` is the single source
+  of truth — Sunset requires exactly 3, others take up to 4; the picker gates on
+  it. Journey now shows every selected photo (background + thumbnail strip),
+  not just the first.
 - Manual photo crop refinements, more story templates, shape clips, route-only
   card (see earlier photo-story roadmap notes).
 

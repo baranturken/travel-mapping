@@ -21,6 +21,7 @@ import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { uploadAvatar, uploadBanner } from '@/features/social/trip-photo-upload';
 import { UserAvatar } from '@/features/social/components/user-avatar';
+import { BannerCropModal } from '@/features/social/components/banner-crop-modal';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -33,6 +34,7 @@ export default function EditProfileScreen() {
   const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(profile?.bannerUrl ?? null);
   const [localBannerUri, setLocalBannerUri] = useState<string | null>(null);
+  const [bannerCropUri, setBannerCropUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
@@ -88,18 +90,26 @@ export default function EditProfileScreen() {
         return;
       }
       // No allowsEditing here: iOS forces a square crop that doesn't match the
-      // wide banner, which misleads the user. Instead they pick the full photo
-      // and the live preview below shows exactly how it will be cropped (cover).
+      // wide banner. Instead the user picks the full photo and frames it in our
+      // own 3:1 crop sheet (BannerCropModal) below.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.9,
       });
       if (result.canceled || !result.assets[0]) return;
 
-      const uri = result.assets[0].uri;
-      setLocalBannerUri(uri);
+      setBannerCropUri(result.assets[0].uri);
+    } catch (err) {
+      Alert.alert('Could not choose banner', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const handleBannerCropConfirm = async (croppedUri: string) => {
+    setBannerCropUri(null);
+    try {
+      setLocalBannerUri(croppedUri);
       setUploadingBanner(true);
-      const url = await uploadBanner(user.id, uri);
+      const url = await uploadBanner(user.id, croppedUri);
       setBannerUrl(url);
     } catch (err) {
       setLocalBannerUri(null);
@@ -253,6 +263,14 @@ export default function EditProfileScreen() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {bannerCropUri ? (
+        <BannerCropModal
+          uri={bannerCropUri}
+          onCancel={() => setBannerCropUri(null)}
+          onConfirm={handleBannerCropConfirm}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
