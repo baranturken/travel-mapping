@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
@@ -79,6 +79,18 @@ export function FeedTripCard({ trip, onPress, onProfile, hideAuthor = false }: P
         disabled={!onPress}
         accessibilityRole={onPress ? 'button' : undefined}
         accessibilityLabel={onPress ? `Open trip ${trip.title}` : undefined}>
+        {trip.photosJson.length > 0 ? (
+          <View style={styles.coverWrap}>
+            <Image source={{ uri: trip.photosJson[0].url }} style={styles.cover} />
+            {trip.photosJson.length > 1 ? (
+              <View style={styles.coverBadge}>
+                <Ionicons name="images" size={12} color="#ffffff" />
+                <Text style={styles.coverBadgeText}>{trip.photosJson.length}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         <Text style={styles.title} numberOfLines={2}>
           {trip.title}
         </Text>
@@ -189,6 +201,26 @@ const styles = StyleSheet.create({
   authorUsername: { color: TravelColors.mutedText, fontSize: 12 },
   body: { padding: 16, gap: 8 },
   bodyPressed: { backgroundColor: TravelColors.tintSurface },
+  coverWrap: {
+    marginTop: -16,
+    marginHorizontal: -16,
+    marginBottom: 6,
+    position: 'relative',
+  },
+  cover: { width: '100%', height: 200, backgroundColor: TravelColors.tintSurface },
+  coverBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  coverBadgeText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
   title: { color: TravelColors.text, fontSize: 18, lineHeight: 24, fontWeight: '800' },
   dateRange: { color: TravelColors.primary, fontSize: 13, fontWeight: '700' },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

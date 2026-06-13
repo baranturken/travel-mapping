@@ -22,6 +22,7 @@ CREATE TABLE published_trips (
   end_date      DATE,
   stops_json    JSONB NOT NULL DEFAULT '[]',
   legs_json     JSONB NOT NULL DEFAULT '[]',
+  photos_json   JSONB NOT NULL DEFAULT '[]',
   is_public     BOOLEAN DEFAULT TRUE NOT NULL,
   published_at  TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   updated_at    TIMESTAMPTZ DEFAULT NOW() NOT NULL,
@@ -134,3 +135,27 @@ GRANT INSERT, UPDATE, DELETE ON published_trips TO authenticated;
 GRANT INSERT, DELETE         ON follows         TO authenticated;
 GRANT INSERT, DELETE         ON trip_likes      TO authenticated;
 GRANT INSERT, DELETE         ON trip_comments   TO authenticated;
+
+-- ─── Storage: trip photos ─────────────────────────────────────────────────────
+-- Public bucket so images load via their public object URL. Writes (and listing,
+-- used before deletion) are restricted to each user's own {userId}/... folder.
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('trip-photos', 'trip-photos', true)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "trip_photos_read_own"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'trip-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "trip_photos_insert"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'trip-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "trip_photos_update"
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'trip-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "trip_photos_delete"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'trip-photos' AND (storage.foldername(name))[1] = auth.uid()::text);

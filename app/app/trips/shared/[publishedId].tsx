@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -146,6 +147,19 @@ export default function SharedTripScreen() {
           </View>
         </View>
 
+        {trip.photosJson.length > 0 ? (
+          <View style={styles.gallery}>
+            {trip.photosJson.map((photo, i) => (
+              <Image
+                key={`${photo.url}-${i}`}
+                source={{ uri: photo.url }}
+                style={styles.galleryImage}
+                accessibilityLabel={photo.caption ?? photo.cityName ?? 'Trip photo'}
+              />
+            ))}
+          </View>
+        ) : null}
+
         {trip.stopsJson.length > 0 ? <SharedTripMap stops={trip.stopsJson} /> : null}
 
         <View style={styles.routeCard}>
@@ -280,6 +294,18 @@ const styles = StyleSheet.create({
     borderColor: TravelColors.border,
   },
   metaPillText: { color: TravelColors.primary, fontSize: 12, fontWeight: '700' },
+  gallery: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  galleryImage: {
+    width: '48.5%',
+    aspectRatio: 1,
+    borderRadius: 14,
+    backgroundColor: TravelColors.tintSurface,
+  },
   routeCard: {
     backgroundColor: TravelColors.surface,
     borderRadius: 20,

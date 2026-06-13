@@ -23,6 +23,12 @@ export type LegSummary = {
   transportLabel: string | null;
 };
 
+export type TripPhoto = {
+  url: string;
+  caption: string | null;
+  cityName: string | null;
+};
+
 export type FeedTrip = {
   id: string;
   localId: string;
@@ -32,6 +38,7 @@ export type FeedTrip = {
   endDate: string | null;
   stopsJson: StopSummary[];
   legsJson: LegSummary[];
+  photosJson: TripPhoto[];
   isPublic: boolean;
   publishedAt: string;
   updatedAt: string;

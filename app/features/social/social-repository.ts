@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { FeedTrip, LegSummary, Profile, StopSummary, TripComment, UserProfile } from './types';
+import type { FeedTrip, LegSummary, Profile, StopSummary, TripComment, TripPhoto, UserProfile } from './types';
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ function mapFeedTrip(row: Record<string, unknown>, userId: string | null, likedI
     endDate: (row.end_date as string | null) ?? null,
     stopsJson: (row.stops_json as StopSummary[]) ?? [],
     legsJson: (row.legs_json as LegSummary[]) ?? [],
+    photosJson: (row.photos_json as TripPhoto[]) ?? [],
     isPublic: row.is_public as boolean,
     publishedAt: row.published_at as string,
     updatedAt: row.updated_at as string,
@@ -227,6 +228,7 @@ export async function publishTrip(params: {
   endDate: string | null;
   stopsJson: StopSummary[];
   legsJson: LegSummary[];
+  photosJson: TripPhoto[];
   isPublic: boolean;
 }): Promise<string> {
   const { data, error } = await supabase
@@ -240,6 +242,7 @@ export async function publishTrip(params: {
         end_date: params.endDate,
         stops_json: params.stopsJson,
         legs_json: params.legsJson,
+        photos_json: params.photosJson,
         is_public: params.isPublic,
         updated_at: new Date().toISOString(),
       },

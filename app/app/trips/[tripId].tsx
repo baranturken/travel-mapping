@@ -38,6 +38,7 @@ import {
   type TripStop,
 } from '@/features/trips/types';
 import { publishTrip, unpublishTrip } from '@/features/social/social-repository';
+import { deleteTripPhotos, uploadTripPhotos } from '@/features/social/trip-photo-upload';
 
 export default function TripDetailScreen() {
   const router = useRouter();
@@ -144,8 +145,8 @@ export default function TripDetailScreen() {
     Alert.alert(
       alreadyPublished ? 'Update published trip' : 'Publish trip',
       alreadyPublished
-        ? 'Re-sync this trip to update what others can see. Choose visibility:'
-        : 'Choose who can see this trip:',
+        ? 'Re-sync this trip and its photos to update what others can see. Choose visibility:'
+        : 'Your trip photos will be uploaded so others can see them. Choose who can see this trip:',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -177,6 +178,16 @@ export default function TripDetailScreen() {
           transportLabel: l.transportLabel,
         }));
 
+        const localPhotos = trip.stops.flatMap((s) =>
+          s.memories.map((m) => ({
+            id: m.id,
+            imageUri: m.imageUri,
+            caption: m.caption,
+            cityName: s.cityName,
+          })),
+        );
+        const photosJson = await uploadTripPhotos(user.id, trip.id, localPhotos);
+
         const supabaseId = await publishTrip({
           localId: trip.id,
           userId: user.id,
@@ -185,6 +196,7 @@ export default function TripDetailScreen() {
           endDate: trip.endDate,
           stopsJson,
           legsJson,
+          photosJson,
           isPublic,
         });
 
@@ -214,6 +226,7 @@ export default function TripDetailScreen() {
             try {
               setIsPublishing(true);
               await unpublishTrip(trip.supabaseId!);
+              if (user) await deleteTripPhotos(user.id, trip.id);
               await repository.setTripPublishStatus(trip.id, null, false, null);
               setTrip((prev) =>
                 prev ? { ...prev, supabaseId: null, isPublic: false, publishedAt: null } : null,
@@ -226,7 +239,7 @@ export default function TripDetailScreen() {
           })(),
       },
     ]);
-  }, [trip, isPublishing, repository]);
+  }, [trip, user, isPublishing, repository]);
 
   if (isLoading) {
     return (
