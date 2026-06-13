@@ -39,19 +39,28 @@ export function buildStaticRouteMapUrl(stops: MapStop[]): string | null {
   minLat -= latPad;
   maxLat += latPad;
 
-  const markers = valid
-    .slice(0, 24)
+  const capped = valid.slice(0, 24);
+
+  const markers = capped
     .map(
       (s) =>
         `lonlat:${s.longitude.toFixed(5)},${s.latitude.toFixed(5)};type:material;color:${MARKER_COLOR};size:medium`,
     )
     .join('|');
 
+  // Straight route line connecting the stops in order (lon,lat pairs).
+  const geometry =
+    capped.length >= 2
+      ? `&geometry=polyline:${capped
+          .map((s) => `${s.longitude.toFixed(5)},${s.latitude.toFixed(5)}`)
+          .join(',')};linecolor:${MARKER_COLOR};linewidth:4;lineopacity:0.85`
+      : '';
+
   const area = `rect:${minLon.toFixed(5)},${minLat.toFixed(5)},${maxLon.toFixed(5)},${maxLat.toFixed(5)}`;
 
   return (
     `https://maps.geoapify.com/v1/staticmap?style=${MAP_STYLE}&format=jpeg` +
     `&width=${MAP_SIZE}&height=${MAP_SIZE}&area=${area}` +
-    `&marker=${markers}&apiKey=${GEOAPIFY_KEY}`
+    `&marker=${markers}${geometry}&apiKey=${GEOAPIFY_KEY}`
   );
 }

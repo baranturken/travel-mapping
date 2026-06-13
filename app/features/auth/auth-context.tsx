@@ -2,6 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@/features/social/types';
+import {
+  clearAttempts,
+  formatLockMessage,
+  getLockRemainingMs,
+  recordFailedAttempt,
+} from '@/features/auth/login-throttle';
 
 export type { Profile } from '@/features/social/types';
 
@@ -88,8 +94,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const signIn = async (email: string, password: string) => {
+    const locked = await getLockRemainingMs(email);
+    if (locked) throw new Error(formatLockMessage(locked));
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) {
+      await recordFailedAttempt(email);
+      throw error;
+    }
+    await clearAttempts(email);
   };
 
   const signUp = async (email: string, password: string) => {
