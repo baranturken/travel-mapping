@@ -110,6 +110,39 @@ export async function uploadAvatar(userId: string, imageUri: string): Promise<st
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
 }
 
+// Uploads a wide banner image to the user's own folder and returns its public
+// URL. Timestamped filename busts the image cache.
+export async function uploadBanner(userId: string, imageUri: string): Promise<string> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('You must be signed in to update your banner.');
+
+  const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
+    imageUri,
+    [{ resize: { width: 1280 } }],
+    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
+  );
+
+  const path = `${userId}/banner/${Date.now()}.jpg`;
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`;
+  const res = await FileSystem.uploadAsync(uploadUrl, jpegUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': 'image/jpeg',
+      'x-upsert': 'true',
+    },
+  });
+  if (res.status !== 200 && res.status !== 201) {
+    throw new Error('Could not upload the banner. Please try again.');
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+}
+
 // Uploads a rendered story-cover JPEG (base64, no data: prefix) for a published
 // trip and returns its public URL. Deterministic path → re-publishing overwrites.
 export async function uploadStoryCover(

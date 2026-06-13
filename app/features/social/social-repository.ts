@@ -9,6 +9,7 @@ function mapProfile(row: Record<string, unknown>): Profile {
     username: row.username as string,
     displayName: row.display_name as string,
     avatarUrl: (row.avatar_url as string | null) ?? null,
+    bannerUrl: (row.banner_url as string | null) ?? null,
     bio: (row.bio as string | null) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

@@ -19,6 +19,7 @@ type AuthContextValue = {
     displayName: string;
     bio?: string;
     avatarUrl?: string | null;
+    bannerUrl?: string | null;
   }): Promise<void>;
   refreshProfile(): Promise<void>;
 };
@@ -29,6 +30,7 @@ function mapProfileRow(row: Record<string, unknown>): Profile {
     username: row.username as string,
     displayName: row.display_name as string,
     avatarUrl: (row.avatar_url as string | null) ?? null,
+    bannerUrl: (row.banner_url as string | null) ?? null,
     bio: (row.bio as string | null) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -105,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     displayName: string;
     bio?: string;
     avatarUrl?: string | null;
+    bannerUrl?: string | null;
   }) => {
     if (!session?.user) throw new Error('Not authenticated');
     const row: Record<string, unknown> = {
@@ -114,9 +117,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       bio: data.bio?.trim() || null,
       updated_at: new Date().toISOString(),
     };
-    // Only touch avatar_url when the caller explicitly provides it, so editing
-    // other fields never clears an existing avatar.
+    // Only touch avatar/banner when explicitly provided, so editing other
+    // fields never clears an existing image.
     if (data.avatarUrl !== undefined) row.avatar_url = data.avatarUrl;
+    if (data.bannerUrl !== undefined) row.banner_url = data.bannerUrl;
     const { error } = await supabase.from('profiles').upsert(row);
     if (error) throw error;
     await loadProfile(session.user.id);

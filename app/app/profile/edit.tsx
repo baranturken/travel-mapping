@@ -5,6 +5,7 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
-import { uploadAvatar } from '@/features/social/trip-photo-upload';
+import { uploadAvatar, uploadBanner } from '@/features/social/trip-photo-upload';
 import { UserAvatar } from '@/features/social/components/user-avatar';
 
 export default function EditProfileScreen() {
@@ -30,8 +31,11 @@ export default function EditProfileScreen() {
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatarUrl ?? null);
   const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(profile?.bannerUrl ?? null);
+  const [localBannerUri, setLocalBannerUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
 
   if (!profile || !user) {
     return (
@@ -76,6 +80,34 @@ export default function EditProfileScreen() {
     }
   };
 
+  const handlePickBanner = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to choose a banner.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 1],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets[0]) return;
+
+      const uri = result.assets[0].uri;
+      setLocalBannerUri(uri);
+      setUploadingBanner(true);
+      const url = await uploadBanner(user.id, uri);
+      setBannerUrl(url);
+    } catch (err) {
+      setLocalBannerUri(null);
+      Alert.alert('Could not update banner', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
   const handleSave = async () => {
     const trimmedUsername = username.trim().toLowerCase();
     const trimmedName = displayName.trim();
@@ -88,8 +120,8 @@ export default function EditProfileScreen() {
       Alert.alert('Display name required', 'Add a display name.');
       return;
     }
-    if (uploadingAvatar) {
-      Alert.alert('Hold on', 'Your photo is still uploading. Try again in a moment.');
+    if (uploadingAvatar || uploadingBanner) {
+      Alert.alert('Hold on', 'An image is still uploading. Try again in a moment.');
       return;
     }
 
@@ -100,6 +132,7 @@ export default function EditProfileScreen() {
         displayName: trimmedName,
         bio: bio.trim(),
         avatarUrl,
+        bannerUrl,
       });
       router.back();
     } catch (err) {
@@ -121,6 +154,24 @@ export default function EditProfileScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Pressable style={styles.bannerSection} onPress={handlePickBanner} disabled={uploadingBanner}>
+            {localBannerUri ?? bannerUrl ? (
+              <Image source={{ uri: localBannerUri ?? bannerUrl ?? '' }} style={styles.bannerImage} />
+            ) : (
+              <View style={styles.bannerPlaceholder} />
+            )}
+            <View style={styles.bannerOverlay}>
+              {uploadingBanner ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Ionicons name="image" size={18} color="#ffffff" />
+              )}
+              <Text style={styles.bannerOverlayText}>
+                {uploadingBanner ? 'Uploading…' : 'Change banner'}
+              </Text>
+            </View>
+          </Pressable>
+
           <View style={styles.avatarSection}>
             <Pressable style={styles.avatarPressable} onPress={handlePickAvatar} disabled={uploadingAvatar}>
               <UserAvatar profile={previewProfile} size={104} />
@@ -206,6 +257,29 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { padding: 20, gap: 20 },
+  bannerSection: {
+    height: 130,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    justifyContent: 'flex-end',
+  },
+  bannerImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  bannerPlaceholder: { ...StyleSheet.absoluteFillObject, backgroundColor: TravelColors.primary, opacity: 0.18 },
+  bannerOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 6,
+    margin: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  bannerOverlayText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   avatarSection: { alignItems: 'center', gap: 10, paddingTop: 8 },
   avatarPressable: { position: 'relative' },
   avatarBadge: {

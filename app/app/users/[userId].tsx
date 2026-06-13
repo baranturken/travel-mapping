@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -112,6 +113,9 @@ export default function UserProfileScreen() {
       <Stack.Screen options={{ title: `@${profile.username}` }} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
+          {profile.bannerUrl ? (
+            <Image source={{ uri: profile.bannerUrl }} style={styles.banner} />
+          ) : null}
           <View style={styles.headerRow}>
             <UserAvatar profile={profile} size={64} />
             <View style={styles.headerCopy}>
@@ -194,6 +198,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: TravelColors.border,
     gap: 14,
+    overflow: 'hidden',
+  },
+  banner: {
+    height: 96,
+    marginTop: -20,
+    marginHorizontal: -20,
+    marginBottom: 2,
+    backgroundColor: TravelColors.tintSurface,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerCopy: { flex: 1, gap: 2 },

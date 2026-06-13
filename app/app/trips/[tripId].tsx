@@ -21,6 +21,7 @@ import { WebView } from 'react-native-webview';
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
+import { fetchRouteMapBase64 } from '@/features/trips/geoapify-map';
 import { TripMapWebView, type LegRouteData } from '@/features/trips/components/trip-map-webview';
 import {
   formatTripDateRange,
@@ -152,10 +153,12 @@ export default function TripDetailScreen() {
         }
       }
 
+      const mapBase64 = await fetchRouteMapBase64(trip.stops);
       const stats = computeTripStats(trip, legRoutes);
       const html = buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, {
         showRoute: true,
         template: 'navy',
+        mapBase64,
       });
 
       return await new Promise<string | null>((resolve) => {
@@ -339,7 +342,21 @@ export default function TripDetailScreen() {
         setTrip((prev) =>
           prev ? { ...prev, supabaseId, isPublic, publishedAt } : null,
         );
-        Alert.alert('Published', isPublic ? 'This trip is now public on your profile.' : 'This trip is saved privately.');
+
+        const visibilityLine = isPublic
+          ? 'This trip is now public on your profile.'
+          : 'This trip is saved privately (link only).';
+        let photoLine = '';
+        if (localPhotos.length === 0) {
+          photoLine =
+            '\n\nNo photos were attached — add photo memories to your stops, then publish again to show them on the post.';
+        } else if (photosJson.length === 0) {
+          photoLine =
+            '\n\nYour photos could not be uploaded (the originals may no longer be accessible on this device). Re-add them to the stops and try again.';
+        } else {
+          photoLine = `\n\n${photosJson.length} ${photosJson.length === 1 ? 'photo' : 'photos'} uploaded${coverImageUrl ? ' and a story cover was created.' : '.'}`;
+        }
+        Alert.alert('Published', visibilityLine + photoLine);
       } catch (err) {
         Alert.alert('Could not publish', err instanceof Error ? err.message : 'Please try again.');
       } finally {

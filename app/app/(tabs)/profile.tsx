@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -98,6 +99,9 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.profileCard}>
           <View style={styles.banner}>
+            {profile.bannerUrl ? (
+              <Image source={{ uri: profile.bannerUrl }} style={styles.bannerImage} />
+            ) : null}
             <Pressable
               style={styles.bannerIconButton}
               onPress={() => router.push('/profile/edit' as Href)}
@@ -238,6 +242,7 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
   },
+  bannerImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
   bannerIconButton: {
     width: 34,
     height: 34,

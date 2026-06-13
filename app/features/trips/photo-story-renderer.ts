@@ -25,6 +25,9 @@ type StoryOptions = {
   cropParams?: PhotoCropParams[];
   routePosition?: RoutePosition;
   template?: StoryTemplate;
+  // Base64 PNG (no data: prefix) of a real basemap framing the visited cities.
+  // When provided, the route card shows this cropped map instead of drawn lines.
+  mapBase64?: string | null;
 };
 
 function ser(value: unknown) {
@@ -53,6 +56,7 @@ export function buildPhotoStoryHtml(
   const showRoute = options?.showRoute ?? true;
   const cropParams = options?.cropParams ?? [];
   const template = options?.template ?? 'navy';
+  const mapBase64 = showRoute ? options?.mapBase64 ?? null : null;
 
   const statItems: string[] = [
     `🌍 ${stats.countryCount} ${stats.countryCount === 1 ? 'country' : 'countries'}`,
@@ -127,6 +131,7 @@ window.runStoryCanvas = async function() {
   const CROP_PARAMS = ${ser(cropParams)};
   const DATE_RANGE  = ${ser(dateRange)};
   const TEMPLATE    = ${ser(template)};
+  const MAP_B64     = ${ser(mapBase64 ?? '')};
 
   const canvas = document.getElementById('c');
   const ctx    = canvas.getContext('2d');
@@ -255,6 +260,18 @@ window.runStoryCanvas = async function() {
   );
   const validEntries = images.filter(Boolean);
   const valid = validEntries.map(e => e.img);
+
+  // ── load route basemap (optional) ────────────────────────────────────
+  let MAP_IMG = null;
+  if (MAP_B64) {
+    MAP_IMG = await new Promise(resolve => {
+      const im = new Image();
+      const t = setTimeout(() => resolve(null), 15000);
+      im.onload  = () => { clearTimeout(t); resolve(im); };
+      im.onerror = () => { clearTimeout(t); resolve(null); };
+      im.src = 'data:image/jpeg;base64,' + MAP_B64;
+    });
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // TEMPLATE: NAVY (classic)
@@ -388,7 +405,7 @@ window.runStoryCanvas = async function() {
     // Route minimap drawn LAST so it always renders on top.
     // Rendered as a frosted-glass card so it reads as a deliberate design
     // element over both photos and the navy background.
-    if (ROUTE_SEGS.length > 0) {
+    if (ROUTE_SEGS.length > 0 || MAP_IMG) {
       const MAP_W = 380, MAP_H = 380, MAP_PAD = 40;
       const MAP_X = ${mapX};
       const MAP_Y = ${mapY};
@@ -401,31 +418,43 @@ window.runStoryCanvas = async function() {
       roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.fill();
       ctx.restore();
 
+      if (MAP_IMG) {
+        // Real cropped basemap (its own labels show the visited cities).
+        ctx.save();
+        roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.clip();
+        coverImage(MAP_IMG, MAP_X, MAP_Y, MAP_W, MAP_H, 0, 0, 1);
+        ctx.restore();
+      } else {
+        // Dot grid inside the card (map-paper effect)
+        ctx.save();
+        roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        for (let gx = MAP_X + 20; gx < MAP_X + MAP_W - 8; gx += 28) {
+          for (let gy = MAP_Y + 20; gy < MAP_Y + MAP_H - 8; gy += 28) {
+            ctx.beginPath(); ctx.arc(gx, gy, 2, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        ctx.restore();
+
+        drawRoute(MAP_X, MAP_Y, MAP_W, MAP_H, MAP_PAD, [
+          { width: 11, style: 'rgba(2,8,20,0.7)' },
+          { width: 6,  style: 'rgba(30,90,170,0.75)' },
+          { width: 3,  style: '#74c0fc' },
+        ], 'rgba(2,8,20,0.85)', '#4dabf7');
+      }
+
       ctx.strokeStyle = 'rgba(255,255,255,0.22)';
       ctx.lineWidth = 1.5;
       roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.stroke();
 
-      // Dot grid inside the card (map-paper effect)
-      ctx.save();
-      roundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 28); ctx.clip();
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      for (let gx = MAP_X + 20; gx < MAP_X + MAP_W - 8; gx += 28) {
-        for (let gy = MAP_Y + 20; gy < MAP_Y + MAP_H - 8; gy += 28) {
-          ctx.beginPath(); ctx.arc(gx, gy, 2, 0, Math.PI * 2); ctx.fill();
-        }
-      }
-      ctx.restore();
-
-      drawRoute(MAP_X, MAP_Y, MAP_W, MAP_H, MAP_PAD, [
-        { width: 11, style: 'rgba(2,8,20,0.7)' },
-        { width: 6,  style: 'rgba(30,90,170,0.75)' },
-        { width: 3,  style: '#74c0fc' },
-      ], 'rgba(2,8,20,0.85)', '#4dabf7');
-
+      // Label chip so "ROUTE" stays legible over the map imagery.
       ctx.font = 'bold 19px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      const labelW = ctx.measureText('ROUTE').width + 24;
+      ctx.fillStyle = 'rgba(7,18,36,0.66)';
+      roundRect(MAP_X + 14, MAP_Y + 14, labelW + 12, 34, 10); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.letterSpacing = '2px';
-      ctx.fillText('ROUTE', MAP_X + 22, MAP_Y + 36);
+      ctx.fillText('ROUTE', MAP_X + 26, MAP_Y + 37);
       ctx.letterSpacing = '0px';
     }
   }

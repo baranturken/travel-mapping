@@ -8,6 +8,7 @@ CREATE TABLE profiles (
   username      TEXT UNIQUE NOT NULL,
   display_name  TEXT NOT NULL,
   avatar_url    TEXT,
+  banner_url    TEXT,
   bio           TEXT,
   created_at    TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   updated_at    TIMESTAMPTZ DEFAULT NOW() NOT NULL
