@@ -23,6 +23,11 @@ section. This is a backlog, not a commitment of order.
 
 ## Security & accounts
 
+- ✅ **Failed-login lockout (basic):** 5 failed sign-ins → 15-min client-side
+  lock (`app/features/auth/login-throttle.ts`). Still pair with server-side
+  protection below.
+- ✅ **Branded auth emails (templates):** ready to paste from
+  `supabase/email-templates.md`. Custom from-address still needs SMTP + domain.
 - **Bot/abuse protection (CAPTCHA):** Cloudflare Turnstile on sign-up and
   sign-in. Requires a Turnstile site in the Cloudflare dashboard (site key +
   secret), the secret added to Supabase Auth → Attack Protection, and a
@@ -42,6 +47,8 @@ section. This is a backlog, not a commitment of order.
 
 ## Media & story polish
 
+- ✅ **Route lines on the story map:** the Geoapify basemap now draws the
+  polyline between stops (not just markers).
 - Roll the **Geoapify cropped basemap** route output into the other story
   templates (currently only the Classic/navy template; others still draw line
   routes).
