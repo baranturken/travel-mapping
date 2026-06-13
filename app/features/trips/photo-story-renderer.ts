@@ -270,7 +270,7 @@ window.runStoryCanvas = async function() {
     MAP_IMG = await new Promise(resolve => {
       const im = new Image();
       im.crossOrigin = 'anonymous';
-      const t = setTimeout(() => resolve(null), 10000);
+      const t = setTimeout(() => resolve(null), 6000);
       im.onload  = () => { clearTimeout(t); resolve(im); };
       im.onerror = () => { clearTimeout(t); resolve(null); };
       im.src = MAP_URL;

@@ -572,7 +572,6 @@ export default function TripStoryScreen() {
 
       {isCropOpen && cropQueue[cropCurrentIndex] ? (
         <CropModal
-          key={cropCurrentIndex}
           uri={cropQueue[cropCurrentIndex]}
           photoNumber={cropCurrentIndex + 1}
           totalPhotos={cropQueue.length}
@@ -625,6 +624,7 @@ function PhotoPickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View style={pickerStyles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessibilityLabel="Close" />
         <View style={pickerStyles.sheet}>
           <View style={pickerStyles.header}>
             <View style={pickerStyles.headerCopy}>
@@ -723,9 +723,12 @@ function CropModal({
   const pinchRef = useRef<{ baseDist: number; baseScale: number } | null>(null);
 
   useEffect(() => {
-    // component is remounted via key prop on navigation, so only load image size here
+    // The modal stays mounted across photos, so reset crop state + reload the
+    // image size whenever the photo (uri) changes.
+    setCropState(initialCrop ?? { normX: 0, normY: 0, scale: 1 });
     setImgNaturalSize(null);
     Image.getSize(uri, (w, h) => setImgNaturalSize({ w, h }), () => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uri]);
 
   useEffect(() => {
@@ -824,10 +827,26 @@ function CropModal({
     }));
   };
 
+  // Swipe the top handle down to dismiss the sheet.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const dismissPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 70) onCancelRef.current();
+      },
+    }),
+  ).current;
+
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onCancel}>
       <View style={cropStyles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessibilityLabel="Close" />
         <View style={cropStyles.sheet}>
+          <View style={cropStyles.handleArea} {...dismissPan.panHandlers}>
+            <View style={cropStyles.handleBar} />
+          </View>
           <View style={cropStyles.header}>
             <Pressable
               style={cropStyles.cancelButton}
@@ -1293,6 +1312,13 @@ const cropStyles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingBottom: 8,
+  },
+  handleArea: { alignItems: 'center', paddingTop: 10, paddingBottom: 2 },
+  handleBar: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: TravelColors.border,
   },
   header: {
     flexDirection: 'row',

@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,6 +28,9 @@ export default function SharedTripScreen() {
   const router = useRouter();
   const { publishedId } = useLocalSearchParams<{ publishedId: string }>();
   const { user } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
+  // Two-column grid: screen minus 16px page padding each side and an 8px gutter.
+  const galleryImageSize = Math.floor((windowWidth - 32 - 8) / 2);
   const [trip, setTrip] = useState<FeedTrip | null>(null);
   const [loading, setLoading] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -171,7 +175,8 @@ export default function SharedTripScreen() {
                 <Image
                   key={`${photo.url}-${i}`}
                   source={{ uri: photo.url }}
-                  style={styles.galleryImage}
+                  style={[styles.galleryImage, { width: galleryImageSize, height: galleryImageSize }]}
+                  resizeMode="cover"
                   accessibilityLabel={photo.caption ?? photo.cityName ?? 'Trip photo'}
                 />
               ))}
@@ -330,11 +335,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    justifyContent: 'space-between',
   },
   galleryImage: {
-    width: '48.5%',
-    aspectRatio: 1,
     borderRadius: 14,
     backgroundColor: TravelColors.tintSurface,
   },
