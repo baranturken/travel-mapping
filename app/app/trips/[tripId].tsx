@@ -21,7 +21,7 @@ import { WebView } from 'react-native-webview';
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
-import { fetchRouteMapBase64 } from '@/features/trips/geoapify-map';
+import { buildStaticRouteMapUrl } from '@/features/trips/geoapify-map';
 import {
   PublishTripModal,
   type PublishablePhoto,
@@ -157,12 +157,12 @@ export default function TripDetailScreen() {
         }
       }
 
-      const mapBase64 = await fetchRouteMapBase64(trip.stops);
+      const mapUrl = buildStaticRouteMapUrl(trip.stops);
       const stats = computeTripStats(trip, legRoutes);
       const html = buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, {
         showRoute: true,
         template: 'navy',
-        mapBase64,
+        mapUrl,
       });
 
       return await new Promise<string | null>((resolve) => {

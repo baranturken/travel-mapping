@@ -148,26 +148,34 @@ export default function SharedTripScreen() {
         </View>
 
         {trip.coverImageUrl ? (
-          <View style={styles.storyCard}>
-            <Image
-              source={{ uri: trip.coverImageUrl }}
-              style={styles.storyCover}
-              resizeMode="contain"
-              accessibilityLabel="Trip story"
-            />
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Story</Text>
+            <View style={styles.storyCard}>
+              <Image
+                source={{ uri: trip.coverImageUrl }}
+                style={styles.storyCover}
+                resizeMode="contain"
+                accessibilityLabel="Trip story"
+              />
+            </View>
           </View>
         ) : null}
 
         {trip.photosJson.length > 0 ? (
-          <View style={styles.gallery}>
-            {trip.photosJson.map((photo, i) => (
-              <Image
-                key={`${photo.url}-${i}`}
-                source={{ uri: photo.url }}
-                style={styles.galleryImage}
-                accessibilityLabel={photo.caption ?? photo.cityName ?? 'Trip photo'}
-              />
-            ))}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Photos · {trip.photosJson.length}
+            </Text>
+            <View style={styles.gallery}>
+              {trip.photosJson.map((photo, i) => (
+                <Image
+                  key={`${photo.url}-${i}`}
+                  source={{ uri: photo.url }}
+                  style={styles.galleryImage}
+                  accessibilityLabel={photo.caption ?? photo.cityName ?? 'Trip photo'}
+                />
+              ))}
+            </View>
           </View>
         ) : null}
 
@@ -305,6 +313,7 @@ const styles = StyleSheet.create({
     borderColor: TravelColors.border,
   },
   metaPillText: { color: TravelColors.primary, fontSize: 12, fontWeight: '700' },
+  section: { gap: 4 },
   storyCard: {
     borderRadius: 20,
     overflow: 'hidden',

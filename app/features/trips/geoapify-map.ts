@@ -1,5 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
-
 const GEOAPIFY_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_KEY ?? '';
 
 // A clean, muted basemap whose own labels show the city/place names — exactly
@@ -56,23 +54,4 @@ export function buildStaticRouteMapUrl(stops: MapStop[]): string | null {
     `&width=${MAP_SIZE}&height=${MAP_SIZE}&area=${area}` +
     `&marker=${markers}&apiKey=${GEOAPIFY_KEY}`
   );
-}
-
-// Downloads the static map and returns it as base64 (no data: prefix) so it can
-// be drawn into the story canvas as a same-origin data URL — this avoids the
-// cross-origin canvas taint that would otherwise break image export.
-export async function fetchRouteMapBase64(stops: MapStop[]): Promise<string | null> {
-  const url = buildStaticRouteMapUrl(stops);
-  if (!url) return null;
-  try {
-    const target = `${FileSystem.cacheDirectory ?? ''}route-map-${Date.now()}.jpg`;
-    const { uri, status } = await FileSystem.downloadAsync(url, target);
-    if (status !== 200) return null;
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    return base64;
-  } catch {
-    return null;
-  }
 }

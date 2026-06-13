@@ -25,9 +25,11 @@ type StoryOptions = {
   cropParams?: PhotoCropParams[];
   routePosition?: RoutePosition;
   template?: StoryTemplate;
-  // Base64 PNG (no data: prefix) of a real basemap framing the visited cities.
+  // URL of a real basemap (Geoapify static map) framing the visited cities.
   // When provided, the route card shows this cropped map instead of drawn lines.
-  mapBase64?: string | null;
+  // Loaded with crossOrigin=anonymous (Geoapify sends ACAO:*) so the canvas
+  // stays exportable.
+  mapUrl?: string | null;
 };
 
 function ser(value: unknown) {
@@ -56,7 +58,7 @@ export function buildPhotoStoryHtml(
   const showRoute = options?.showRoute ?? true;
   const cropParams = options?.cropParams ?? [];
   const template = options?.template ?? 'navy';
-  const mapBase64 = showRoute ? options?.mapBase64 ?? null : null;
+  const mapUrl = showRoute ? options?.mapUrl ?? null : null;
 
   const statItems: string[] = [
     `🌍 ${stats.countryCount} ${stats.countryCount === 1 ? 'country' : 'countries'}`,
@@ -131,7 +133,7 @@ window.runStoryCanvas = async function() {
   const CROP_PARAMS = ${ser(cropParams)};
   const DATE_RANGE  = ${ser(dateRange)};
   const TEMPLATE    = ${ser(template)};
-  const MAP_B64     = ${ser(mapBase64 ?? '')};
+  const MAP_URL     = ${ser(mapUrl ?? '')};
 
   const canvas = document.getElementById('c');
   const ctx    = canvas.getContext('2d');
@@ -262,14 +264,16 @@ window.runStoryCanvas = async function() {
   const valid = validEntries.map(e => e.img);
 
   // ── load route basemap (optional) ────────────────────────────────────
+  // Bounded by a timeout so a slow/blocked map never stalls the whole story.
   let MAP_IMG = null;
-  if (MAP_B64) {
+  if (MAP_URL) {
     MAP_IMG = await new Promise(resolve => {
       const im = new Image();
-      const t = setTimeout(() => resolve(null), 15000);
+      im.crossOrigin = 'anonymous';
+      const t = setTimeout(() => resolve(null), 10000);
       im.onload  = () => { clearTimeout(t); resolve(im); };
       im.onerror = () => { clearTimeout(t); resolve(null); };
-      im.src = 'data:image/jpeg;base64,' + MAP_B64;
+      im.src = MAP_URL;
     });
   }
 

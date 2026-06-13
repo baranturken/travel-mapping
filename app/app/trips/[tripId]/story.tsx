@@ -28,7 +28,7 @@ import { formatTripDateRange } from '@/features/trips/mappers';
 import { getOsrmProfile } from '@/features/trips/routing/osrm-route-fetcher';
 import { buildRouteCacheKey, getCachedRoute } from '@/features/trips/routing/route-cache';
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
-import { fetchRouteMapBase64 } from '@/features/trips/geoapify-map';
+import { buildStaticRouteMapUrl } from '@/features/trips/geoapify-map';
 import { computeTripStats, formatDistanceKm } from '@/features/trips/trip-stats';
 import type { TripDetail } from '@/features/trips/types';
 import {
@@ -113,7 +113,9 @@ export default function TripStoryScreen() {
   const [photoStoryHtml, setPhotoStoryHtml] = useState<string | null>(null);
   const [isGeneratingPhotoStory, setIsGeneratingPhotoStory] = useState(false);
   const [showRoute, setShowRoute] = useState(true);
-  const [mapBase64, setMapBase64] = useState<string | null>(null);
+  // Geoapify static-map URL framing the visited cities; drawn into the route
+  // card by the renderer. Synchronous — no network call here.
+  const mapUrl = useMemo(() => (trip ? buildStaticRouteMapUrl(trip.stops) : null), [trip]);
 
   // Photo picker state
   const [pickerMemories, setPickerMemories] = useState<PickerMemory[]>([]);
@@ -172,12 +174,8 @@ export default function TripStoryScreen() {
         );
 
         setLegRoutes(routes);
-        void fetchRouteMapBase64(nextTrip.stops)
-          .then(setMapBase64)
-          .catch(() => setMapBase64(null));
       } else {
         setLegRoutes({});
-        setMapBase64(null);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Please try again.';
@@ -259,20 +257,20 @@ export default function TripStoryScreen() {
     if (allMemories.length === 0) {
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate, mapBase64 }));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate, mapUrl }));
       return;
     }
 
     setPickerMemories(allMemories);
     setIsPhotoPickerOpen(true);
-  }, [isGeneratingPhotoStory, legRoutes, mapBase64, routePosition, showRoute, storyTemplate, trip]);
+  }, [isGeneratingPhotoStory, legRoutes, mapUrl, routePosition, showRoute, storyTemplate, trip]);
 
   const handleShareCardAsImage = useCallback(() => {
     if (!trip || isGeneratingPhotoStory) return;
     setIsGeneratingPhotoStory(true);
     const stats = computeTripStats(trip, legRoutes);
-    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate, mapBase64 }));
-  }, [isGeneratingPhotoStory, legRoutes, mapBase64, routePosition, showRoute, storyTemplate, trip]);
+    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate, mapUrl }));
+  }, [isGeneratingPhotoStory, legRoutes, mapUrl, routePosition, showRoute, storyTemplate, trip]);
 
   // Called after photo picker confirms URIs — opens crop flow
   const handlePickerConfirm = useCallback((selectedUris: string[]) => {
@@ -281,14 +279,14 @@ export default function TripStoryScreen() {
       if (!trip) return;
       setIsGeneratingPhotoStory(true);
       const stats = computeTripStats(trip, legRoutes);
-      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate, mapBase64 }));
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute, routePosition, template: storyTemplate, mapUrl }));
       return;
     }
     setCropQueue(selectedUris);
     setCropCurrentIndex(0);
     setCropParamsAccumulated(new Array(selectedUris.length).fill(null));
     setIsCropOpen(true);
-  }, [legRoutes, mapBase64, routePosition, showRoute, storyTemplate, trip]);
+  }, [legRoutes, mapUrl, routePosition, showRoute, storyTemplate, trip]);
 
   // Generate story after all crops are decided
   // Crop params are passed to the canvas renderer which applies them via coverImage.
@@ -335,10 +333,10 @@ export default function TripStoryScreen() {
         cropParams: params,
         routePosition,
         template: storyTemplate,
-        mapBase64,
+        mapUrl,
       }),
     );
-  }, [legRoutes, mapBase64, routePosition, showRoute, storyTemplate, trip]);
+  }, [legRoutes, mapUrl, routePosition, showRoute, storyTemplate, trip]);
 
   const handleCropConfirm = useCallback((params: PhotoCropParams) => {
     const newParams = cropParamsAccumulated.slice();
