@@ -113,6 +113,9 @@ export default function TripStoryScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoStoryHtml, setPhotoStoryHtml] = useState<string | null>(null);
   const [isGeneratingPhotoStory, setIsGeneratingPhotoStory] = useState(false);
+  // Last render failure, shown inline on screen (not just an alert) so issues are
+  // visible without device logs. Cleared whenever a new render starts.
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [showRoute, setShowRoute] = useState(true);
   // Geoapify static-map URL framing the visited cities; drawn into the route
   // card by the renderer. Synchronous — no network call here.
@@ -194,6 +197,11 @@ export default function TripStoryScreen() {
     }, [loadStory]),
   );
 
+  // Clear any previous render error when a new render starts.
+  useEffect(() => {
+    if (isGeneratingPhotoStory) setRenderError(null);
+  }, [isGeneratingPhotoStory]);
+
   // Backstop only: the canvas self-posts within ~14 s via its own watchdog, so
   // this should rarely fire. Kept slightly above that to unblock the UI if the
   // WebView itself never loads.
@@ -202,6 +210,7 @@ export default function TripStoryScreen() {
     const timer = setTimeout(() => {
       setIsGeneratingPhotoStory(false);
       setPhotoStoryHtml(null);
+      setRenderError('timeout: the WebView never responded (stage unknown)');
       Alert.alert(
         'Story timed out',
         'The story took too long to generate. Try selecting fewer or smaller photos.',
@@ -403,7 +412,9 @@ export default function TripStoryScreen() {
           );
         }
       } else {
-        Alert.alert('Could not render story image', data.replace('error:', ''));
+        const detail = data.replace('error:', '');
+        setRenderError(detail);
+        Alert.alert('Could not render story image', detail);
       }
 
       setIsGeneratingPhotoStory(false);
@@ -519,6 +530,15 @@ export default function TripStoryScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {renderError ? (
+          <View style={styles.renderErrorBanner}>
+            <Ionicons name="warning-outline" size={16} color="#b3541e" />
+            <Text style={styles.renderErrorText} selectable>
+              Render failed — {renderError}
+            </Text>
+          </View>
+        ) : null}
 
         <Pressable
           style={[styles.photoStoryButton, isGeneratingPhotoStory && styles.buttonDisabled]}
@@ -1151,6 +1171,18 @@ const styles = StyleSheet.create({
   },
   cardImageButtonText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
   buttonDisabled: { opacity: 0.6 },
+  renderErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(179,84,30,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(179,84,30,0.35)',
+  },
+  renderErrorText: { flex: 1, color: '#b3541e', fontSize: 12, fontWeight: '600' },
   shareButton: {
     flex: 1,
     flexDirection: 'row',

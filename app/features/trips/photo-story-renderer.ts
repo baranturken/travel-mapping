@@ -154,8 +154,18 @@ window.runStoryCanvas = async function() {
     if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
   }
   window.__storyWatchdog = setTimeout(function () {
+    // Don't just give up — by now the synchronous draw has run (all awaits are
+    // bounded), so try to salvage whatever is on the canvas. Only report an
+    // error if even that fails (e.g. a tainted canvas / SecurityError).
+    var c = window.__storyCanvas;
+    if (c) {
+      try { post(c.toDataURL('image/jpeg', 0.72)); return; } catch (e) {
+        post('error:watchdog:' + __stage + ':' + String(e));
+        return;
+      }
+    }
     post('error:watchdog:' + __stage);
-  }, 14000);
+  }, 10000);
 
   // A frame tick that resolves on the next animation frame OR after a short
   // timeout — so the export never blocks when rAF is paused off-screen.
@@ -182,6 +192,8 @@ window.runStoryCanvas = async function() {
 
   const canvas = document.getElementById('c');
   const ctx    = canvas.getContext('2d');
+  // Expose for the watchdog (declared above this try) so it can salvage-export.
+  window.__storyCanvas = canvas;
   const W = 1080, H = 1920;
   const BG = '#0f2540';
 
