@@ -194,7 +194,9 @@ export default function TripStoryScreen() {
     }, [loadStory]),
   );
 
-  // Safety net: if canvas never responds, reset after 60 s to unblock the UI
+  // Backstop only: the canvas self-posts within ~14 s via its own watchdog, so
+  // this should rarely fire. Kept slightly above that to unblock the UI if the
+  // WebView itself never loads.
   useEffect(() => {
     if (!isGeneratingPhotoStory) return;
     const timer = setTimeout(() => {
@@ -204,7 +206,7 @@ export default function TripStoryScreen() {
         'Story timed out',
         'The story took too long to generate. Try selecting fewer or smaller photos.',
       );
-    }, 60000);
+    }, 22000);
     return () => clearTimeout(timer);
   }, [isGeneratingPhotoStory]);
 
@@ -528,7 +530,7 @@ export default function TripStoryScreen() {
             <Ionicons name="images-outline" size={18} color="#ffffff" />
           )}
           <Text style={styles.photoStoryButtonText}>
-            {isGeneratingPhotoStory ? 'Building story…' : 'Share as photo story'}
+            {isGeneratingPhotoStory ? 'Building collage…' : 'Share as photo collage'}
           </Text>
         </Pressable>
         <View style={styles.secondaryButtonRow}>

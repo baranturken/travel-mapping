@@ -140,6 +140,34 @@ window.runStoryCanvas = async function() {
   // in-HTML auto-trigger and the React Native injected trigger fire.
   if (window.__storyCanvasStarted) return;
   window.__storyCanvasStarted = true;
+
+  // Single-post guard + watchdog. The hidden WebView renders off-screen, where
+  // requestAnimationFrame can be paused (e.g. while the crop modal is still
+  // animating out). setTimeout keeps firing, so a watchdog guarantees we always
+  // post back within a bounded time — turning a silent 30s+ hang into either an
+  // image or a precise 'error:watchdog:<stage>' that names where it stalled.
+  var __stage = 'init';
+  function post(msg) {
+    if (window.__storyPosted) return;
+    window.__storyPosted = true;
+    clearTimeout(window.__storyWatchdog);
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+  }
+  window.__storyWatchdog = setTimeout(function () {
+    post('error:watchdog:' + __stage);
+  }, 14000);
+
+  // A frame tick that resolves on the next animation frame OR after a short
+  // timeout — so the export never blocks when rAF is paused off-screen.
+  function nextFrame() {
+    return new Promise(function (resolve) {
+      var done = false;
+      function fire() { if (!done) { done = true; resolve(); } }
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fire);
+      setTimeout(fire, 120);
+    });
+  }
+
   try {
   const PHOTOS      = ${ser(photos)};
   const TITLE       = ${ser(trip.title)};
@@ -280,14 +308,20 @@ window.runStoryCanvas = async function() {
   ctx.fillRect(0, 0, W, H);
 
   // ── load photos ──────────────────────────────────────────────────────
+  // One shared deadline across all photos: whatever has decoded by then is used,
+  // so a single slow/broken image can't stall the whole story.
+  __stage = 'photos';
+  const photoDeadline = new Promise(resolve => setTimeout(() => resolve('deadline'), 9000));
   const images = await Promise.all(
-    PHOTOS.slice(0, ${maxPhotos}).map((b64, origIdx) => new Promise(resolve => {
-      const img = new Image();
-      const timer = setTimeout(() => resolve(null), 15000);
-      img.onload  = () => { clearTimeout(timer); resolve({ img, origIdx }); };
-      img.onerror = () => { clearTimeout(timer); resolve(null); };
-      img.src = 'data:image/jpeg;base64,' + b64;
-    })),
+    PHOTOS.slice(0, ${maxPhotos}).map((b64, origIdx) => Promise.race([
+      new Promise(resolve => {
+        const img = new Image();
+        img.onload  = () => resolve({ img, origIdx });
+        img.onerror = () => resolve(null);
+        img.src = 'data:image/jpeg;base64,' + b64;
+      }),
+      photoDeadline.then(() => null),
+    ])),
   );
   const validEntries = images.filter(Boolean);
   const valid = validEntries.map(e => e.img);
@@ -298,6 +332,7 @@ window.runStoryCanvas = async function() {
   // slow/blocked map never stalls the whole story. Geoapify sends
   // access-control-allow-origin:* and we request it with crossOrigin=anonymous,
   // so the canvas stays exportable (toDataURL won't taint).
+  __stage = 'map';
   let MAP_IMG = null;
   if (MAP_URL) {
     MAP_IMG = await new Promise(resolve => {
@@ -1338,22 +1373,22 @@ window.runStoryCanvas = async function() {
   }
 
   // ── export ───────────────────────────────────────────────────────────
-  // Two frames so the canvas backing store is fully committed before we read
-  // it back; a single rAF can be too early for a large single drawImage.
-  await new Promise(r => requestAnimationFrame(r));
-  await new Promise(r => requestAnimationFrame(r));
+  // Two frame ticks so the canvas backing store is fully committed before we
+  // read it back; nextFrame falls back to a timer so this never hangs when rAF
+  // is paused off-screen (the cause of the 1-photo / "skip all" timeout).
+  __stage = 'export';
+  await nextFrame();
+  await nextFrame();
   let dataUrl;
   try {
     dataUrl = canvas.toDataURL('image/jpeg', 0.72);
   } catch (e) {
-    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage('error:canvas_export:' + String(e));
+    post('error:canvas_export:' + String(e));
     return;
   }
-  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(dataUrl);
+  post(dataUrl);
   } catch (outerErr) {
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage('error:uncaught:' + String(outerErr));
-    }
+    post('error:uncaught:' + String(outerErr));
   }
 };
 
