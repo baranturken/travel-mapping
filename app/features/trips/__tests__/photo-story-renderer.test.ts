@@ -116,3 +116,106 @@ describe('generated canvas script validity', () => {
     }
   });
 });
+
+// Minimal 2D-context mock: canvas methods are no-ops; measureText returns a
+// width and gradients accept color stops. Enough to execute the whole draw path.
+function makeCtxMock() {
+  const grad = { addColorStop() {} };
+  return new Proxy({} as Record<string, unknown>, {
+    get(target, prop: string) {
+      if (prop === 'measureText') return () => ({ width: 12 });
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => grad;
+      if (prop in target) return target[prop];
+      return () => {};
+    },
+    set(target, prop: string, value) {
+      target[prop] = value;
+      return true;
+    },
+  });
+}
+
+// Actually execute a template's generated canvas script against a mocked DOM and
+// resolve with whatever it posts back. A thrown error rejects; an infinite loop
+// or hang trips the per-test timeout — so this catches real runtime failures the
+// syntax check can't.
+function runTemplate(
+  template: StoryTemplate,
+  photoCount: number,
+  mapUrl: string | null = null,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const photos = Array.from({ length: photoCount }, () => 'QUJD');
+    const html = buildPhotoStoryHtml(makeTrip(), STATS, {}, photos, { template, mapUrl });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    if (!script) return reject(new Error('no script'));
+
+    const ctx = makeCtxMock();
+    const canvas = {
+      width: 1080,
+      height: 1920,
+      getContext: () => ctx,
+      toDataURL: () => 'data:image/jpeg;base64,RESULT',
+    };
+    const win: Record<string, unknown> = {
+      ReactNativeWebView: { postMessage: (m: string) => resolve(m) },
+    };
+    const raf = (cb: () => void) => setTimeout(cb, 0) as unknown as number;
+    win.requestAnimationFrame = raf;
+    const doc = { readyState: 'complete', getElementById: () => canvas, addEventListener: () => {} };
+
+    class ImgMock {
+      width = 0;
+      height = 0;
+      crossOrigin = '';
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_v: string) {
+        setTimeout(() => {
+          this.width = 1000;
+          this.height = 800;
+          this.onload?.();
+        }, 0);
+      }
+    }
+
+    try {
+      const fn = new Function(
+        'window', 'document', 'Image', 'requestAnimationFrame', 'setTimeout', 'clearTimeout',
+        script,
+      );
+      fn(win, doc, ImgMock, raf, setTimeout, clearTimeout);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+describe('photo story canvas executes end-to-end', () => {
+  const templates = Object.keys(TEMPLATE_PHOTO_LIMITS) as StoryTemplate[];
+
+  it.each(templates)(
+    '%s posts an image at its minimum photo count',
+    async (template) => {
+      const count = Math.max(1, TEMPLATE_PHOTO_LIMITS[template].min);
+      const result = await runTemplate(template, count);
+      expect(result.startsWith('data:image')).toBe(true);
+    },
+    8000,
+  );
+
+  // The real app always has a Geoapify basemap; reproduce that path at the photo
+  // counts the user reported failing (1) and working (2).
+  const MAP = 'https://maps.geoapify.com/v1/staticmap?style=osm-bright-grey';
+  it.each(templates)(
+    '%s posts an image with a basemap at 1 and 2 photos',
+    async (template) => {
+      const min = TEMPLATE_PHOTO_LIMITS[template].min;
+      for (const count of [Math.max(1, min), Math.max(2, min)]) {
+        const result = await runTemplate(template, count, MAP);
+        expect(result.startsWith('data:image')).toBe(true);
+      }
+    },
+    8000,
+  );
+});
