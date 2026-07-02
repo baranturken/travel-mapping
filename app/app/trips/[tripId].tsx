@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,13 +16,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
-import { TripMapWebView } from '@/features/trips/components/trip-map-webview';
+import { TripMapWebView, type LegRouteData } from '@/features/trips/components/trip-map-webview';
 import {
+  formatTripDateRange,
   formatTripUpdatedAt,
   formatTripStopLabel,
   toDuplicatedTripInput,
 } from '@/features/trips/mappers';
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
+import {
+  computeTripStats,
+  formatDistanceKm,
+  formatLegDistance,
+  formatLegDuration,
+} from '@/features/trips/trip-stats';
 import {
   getAccommodationDisplay,
   getTransportDisplay,
@@ -39,6 +47,7 @@ export default function TripDetailScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [legRoutes, setLegRoutes] = useState<Record<string, LegRouteData>>({});
 
   const loadTrip = useCallback(async () => {
     setIsLoading(true);
@@ -158,11 +167,14 @@ export default function TripDetailScreen() {
     );
   }
 
+  const totalMemoryCount = trip.stops.reduce((count, stop) => count + stop.memories.length, 0);
   const memoryPinCount = trip.stops.reduce(
     (count, stop) =>
       count + stop.memories.filter((memory) => memory.latitude !== null && memory.longitude !== null).length,
     0,
   );
+  const dateRangeLabel = formatTripDateRange(trip.startDate, trip.endDate);
+  const stats = computeTripStats(trip, legRoutes);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -173,20 +185,42 @@ export default function TripDetailScreen() {
           <Text style={styles.subtitle}>
             {trip.stops.length} stops • Updated {formatTripUpdatedAt(trip.updatedAt)}
           </Text>
+          {dateRangeLabel ? <Text style={styles.dateRange}>{dateRangeLabel}</Text> : null}
           <View style={styles.headerMetaRow}>
             <View style={styles.metaPill}>
               <Text style={styles.metaPillText}>
-                {trip.stops.reduce((count, stop) => count + stop.places.length, 0)} places
+                🌍 {stats.countryCount} {stats.countryCount === 1 ? 'country' : 'countries'}
               </Text>
             </View>
             <View style={styles.metaPill}>
               <Text style={styles.metaPillText}>
-                {trip.stops.reduce((count, stop) => count + stop.memories.length, 0)} memories
+                📍 {stats.cityCount} {stats.cityCount === 1 ? 'city' : 'cities'}
               </Text>
             </View>
+            {stats.dayCount !== null ? (
+              <View style={styles.metaPill}>
+                <Text style={styles.metaPillText}>
+                  🗓️ {stats.dayCount} {stats.dayCount === 1 ? 'day' : 'days'}
+                </Text>
+              </View>
+            ) : null}
+            {stats.totalDistanceKm !== null ? (
+              <View style={styles.metaPill}>
+                <Text style={styles.metaPillText}>
+                  🛣️ {formatDistanceKm(stats.totalDistanceKm)}
+                </Text>
+              </View>
+            ) : null}
+            {totalMemoryCount > 0 ? (
+              <View style={styles.metaPill}>
+                <Text style={styles.metaPillText}>
+                  📷 {totalMemoryCount} {totalMemoryCount === 1 ? 'memory' : 'memories'}
+                </Text>
+              </View>
+            ) : null}
             {memoryPinCount > 0 ? (
               <View style={styles.metaPill}>
-                <Text style={styles.metaPillText}>{memoryPinCount} pinned on map</Text>
+                <Text style={styles.metaPillText}>{memoryPinCount} pinned</Text>
               </View>
             ) : null}
           </View>
@@ -201,6 +235,18 @@ export default function TripDetailScreen() {
             }>
             <Ionicons name="create-outline" size={16} color={TravelColors.primary} />
             <Text style={styles.editButtonText}>Edit trip</Text>
+          </Pressable>
+          <Pressable
+            style={styles.editButton}
+            disabled={isDeleting || isDuplicating}
+            onPress={() =>
+              router.push({
+                pathname: '/trips/[tripId]/story',
+                params: { tripId: trip.id },
+              })
+            }>
+            <Ionicons name="share-outline" size={16} color={TravelColors.primary} />
+            <Text style={styles.editButtonText}>Share trip story</Text>
           </Pressable>
           <Pressable
             style={[styles.duplicateButton, isDuplicating && styles.duplicateButtonDisabled]}
@@ -220,10 +266,10 @@ export default function TripDetailScreen() {
           </Pressable>
         </View>
 
-        <TripMapWebView trip={trip} />
+        <TripMapWebView trip={trip} onRoutesLoaded={setLegRoutes} />
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Stops and story</Text>
+          <Text style={styles.sectionTitle}>Stops</Text>
           <View style={styles.list}>
             {trip.stops.map((stop, index) => (
               <StopStoryCard key={stop.id} stop={stop} index={index} />
@@ -238,6 +284,9 @@ export default function TripDetailScreen() {
               const fromStop = trip.stops.find((stop) => stop.id === leg.fromStopId);
               const toStop = trip.stops.find((stop) => stop.id === leg.toStopId);
               const transport = getTransportDisplay(leg.transportType, leg.transportLabel);
+              const routeData = legRoutes[leg.id];
+              const distanceLabel = formatLegDistance(routeData?.distanceMeters ?? null);
+              const durationLabel = formatLegDuration(routeData?.durationSeconds ?? null);
 
               if (!fromStop || !toStop) {
                 return null;
@@ -253,8 +302,12 @@ export default function TripDetailScreen() {
                       {formatTripStopLabel(fromStop)} → {formatTripStopLabel(toStop)}
                     </Text>
                     <Text style={styles.rowBody}>{transport.label}</Text>
+                    {(distanceLabel || durationLabel) ? (
+                      <Text style={styles.legMeta}>
+                        {[distanceLabel, durationLabel].filter(Boolean).join(' · ')}
+                      </Text>
+                    ) : null}
                   </View>
-                  <Ionicons name="arrow-forward" size={16} color={TravelColors.mutedText} />
                 </View>
               );
             })}
@@ -266,14 +319,38 @@ export default function TripDetailScreen() {
 }
 
 function StopStoryCard({ stop, index }: { stop: TripStop; index: number }) {
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const [selectedMemoryIndex, setSelectedMemoryIndex] = useState(0);
+
+  if (index === 0 && stop.isHomeBase) {
+    return (
+      <View style={styles.rowCard}>
+        <View style={styles.stopIndexBadge}>
+          <Text style={styles.stopIndexText}>{index + 1}</Text>
+        </View>
+        <View style={styles.rowContent}>
+          <Text style={styles.rowTitle}>{formatTripStopLabel(stop)}</Text>
+          <Text style={styles.rowBody}>This is where you are living.</Text>
+          <View style={styles.homeBasePill}>
+            <Text style={styles.homeBasePillText}>Home base</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   const hasAccommodation = Boolean(stop.accommodationName?.trim() || stop.accommodationType);
   const accommodation = hasAccommodation
     ? getAccommodationDisplay(stop.accommodationType, stop.accommodationName)
     : null;
   const visiblePlaces = stop.places.slice(0, 3);
   const extraPlaceCount = stop.places.length - visiblePlaces.length;
-  const visibleMemories = stop.memories.slice(0, 3);
-  const extraMemoryCount = stop.memories.length - visibleMemories.length;
+  const previewMemories = stop.memories.slice(0, 3);
+
+  const openGalleryAt = (memoryIndex: number) => {
+    setSelectedMemoryIndex(memoryIndex);
+    setIsGalleryOpen(true);
+  };
 
   return (
     <View style={styles.rowCard}>
@@ -322,30 +399,139 @@ function StopStoryCard({ stop, index }: { stop: TripStop; index: number }) {
         {stop.memories.length > 0 ? (
           <View style={styles.storyBlock}>
             <Text style={styles.storyLabel}>Photo memories</Text>
-            <View style={styles.memoryGrid}>
-              {visibleMemories.map((memory) => (
-                <View key={memory.id} style={styles.memoryCard}>
-                  <Image source={{ uri: memory.imageUri }} style={styles.memoryImage} />
-                  <Text style={styles.memoryCaption}>
-                    {memory.caption?.trim() ? memory.caption : 'Photo memory'}
-                  </Text>
-                  <Text style={styles.memoryMeta}>
-                    {memory.latitude !== null && memory.longitude !== null
-                      ? 'Pinned on map'
-                      : 'Shown in stop gallery'}
+            <Pressable style={styles.memoryStackCard} onPress={() => openGalleryAt(0)}>
+              <View style={styles.memoryStackCanvas}>
+                {previewMemories.map((memory, memoryIndex) => (
+                  <View
+                    key={memory.id}
+                    style={[
+                      styles.memoryStackPhoto,
+                      {
+                        left: memoryIndex * 22,
+                        transform: [{ rotate: `${(memoryIndex - 1) * 5}deg` }],
+                        zIndex: previewMemories.length - memoryIndex,
+                      },
+                    ]}>
+                    <Image source={{ uri: memory.imageUri }} style={styles.memoryStackImage} />
+                  </View>
+                ))}
+              </View>
+              <View style={styles.memoryStackCopy}>
+                <Text style={styles.memoryStackTitle}>
+                  {stop.memories.length} {stop.memories.length === 1 ? 'photo' : 'photos'} saved
+                </Text>
+                <Text style={styles.memoryStackBody}>
+                  Tap to open the full gallery for this stop and browse every memory you added.
+                </Text>
+                <View style={styles.memoryStackAction}>
+                  <Text style={styles.memoryStackActionText}>
+                    {stop.memories.length === 1 ? 'Open photo' : 'Open gallery'}
                   </Text>
                 </View>
+              </View>
+            </Pressable>
+
+            <View style={styles.memoryThumbRow}>
+              {previewMemories.map((memory, memoryIndex) => (
+                <Pressable
+                  key={`${memory.id}-thumb`}
+                  style={styles.memoryThumbButton}
+                  onPress={() => openGalleryAt(memoryIndex)}>
+                  <Image source={{ uri: memory.imageUri }} style={styles.memoryThumbImage} />
+                </Pressable>
               ))}
-              {extraMemoryCount > 0 ? (
-                <View style={styles.morePill}>
-                  <Text style={styles.morePillText}>+{extraMemoryCount} more</Text>
-                </View>
+              {stop.memories.length > previewMemories.length ? (
+                <Pressable
+                  style={styles.morePill}
+                  onPress={() => openGalleryAt(previewMemories.length)}>
+                  <Text style={styles.morePillText}>
+                    +{stop.memories.length - previewMemories.length} more
+                  </Text>
+                </Pressable>
               ) : null}
             </View>
+
+            <StopMemoryGalleryModal
+              stopLabel={formatTripStopLabel(stop)}
+              memories={stop.memories}
+              visible={isGalleryOpen}
+              selectedMemoryIndex={selectedMemoryIndex}
+              onSelectMemory={setSelectedMemoryIndex}
+              onClose={() => setIsGalleryOpen(false)}
+            />
           </View>
         ) : null}
       </View>
     </View>
+  );
+}
+
+function StopMemoryGalleryModal({
+  stopLabel,
+  memories,
+  visible,
+  selectedMemoryIndex,
+  onSelectMemory,
+  onClose,
+}: {
+  stopLabel: string;
+  memories: TripStop['memories'];
+  visible: boolean;
+  selectedMemoryIndex: number;
+  onSelectMemory(index: number): void;
+  onClose(): void;
+}) {
+  const selectedMemory = memories[selectedMemoryIndex] ?? memories[0];
+
+  if (!selectedMemory) {
+    return null;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.galleryBackdrop}>
+        <View style={styles.gallerySheet}>
+          <View style={styles.galleryHeader}>
+            <View style={styles.galleryHeaderCopy}>
+              <Text style={styles.galleryTitle}>{stopLabel}</Text>
+              <Text style={styles.gallerySubtitle}>
+                Photo {selectedMemoryIndex + 1} of {memories.length}
+              </Text>
+            </View>
+            <Pressable style={styles.galleryCloseButton} onPress={onClose}>
+              <Ionicons name="close" size={20} color={TravelColors.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.galleryContent}>
+            <Image source={{ uri: selectedMemory.imageUri }} style={styles.galleryHeroImage} />
+            <Text style={styles.galleryCaption}>
+              {selectedMemory.caption?.trim() ? selectedMemory.caption : 'Photo memory'}
+            </Text>
+            <Text style={styles.galleryMeta}>
+              {selectedMemory.latitude !== null && selectedMemory.longitude !== null
+                ? 'Pinned on the map for this trip.'
+                : 'Saved to this stop without exact GPS coordinates.'}
+            </Text>
+
+            <View style={styles.galleryThumbRail}>
+              {memories.map((memory, memoryIndex) => {
+                const isSelected = memoryIndex === selectedMemoryIndex;
+
+                return (
+                  <Pressable
+                    key={memory.id}
+                    style={[styles.galleryThumbButton, isSelected && styles.galleryThumbButtonSelected]}
+                    onPress={() => onSelectMemory(memoryIndex)}>
+                    <Image source={{ uri: memory.imageUri }} style={styles.galleryThumbImage} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -417,6 +603,12 @@ const styles = StyleSheet.create({
     color: TravelColors.secondaryText,
     fontSize: 15,
     lineHeight: 22,
+  },
+  dateRange: {
+    color: TravelColors.primary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
   },
   headerMetaRow: {
     flexDirection: 'row',
@@ -595,10 +787,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  memoryGrid: {
+  memoryThumbRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  memoryThumbButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    backgroundColor: '#ffffff',
+  },
+  memoryThumbImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#dfeaf5',
   },
   morePill: {
     alignSelf: 'flex-start',
@@ -614,41 +820,179 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  memoryCard: {
-    width: 132,
-    borderRadius: 16,
-    backgroundColor: '#ffffff',
+  homeBasePill: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#eff7ff',
     borderWidth: 1,
-    borderColor: TravelColors.border,
-    overflow: 'hidden',
+    borderColor: '#cfe2f4',
   },
-  memoryImage: {
-    width: '100%',
-    height: 92,
+  homeBasePillText: {
+    color: TravelColors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  memoryStackCard: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#eef7ff',
+    borderWidth: 1,
+    borderColor: '#d4e7fa',
+    alignItems: 'center',
+  },
+  memoryStackCanvas: {
+    width: 118,
+    height: 86,
+    position: 'relative',
+  },
+  memoryStackPhoto: {
+    position: 'absolute',
+    top: 0,
+    width: 64,
+    height: 86,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#ffffff',
     backgroundColor: '#dfeaf5',
   },
-  memoryCaption: {
-    color: TravelColors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    paddingHorizontal: 10,
-    paddingTop: 9,
+  memoryStackImage: {
+    width: '100%',
+    height: '100%',
   },
-  memoryMeta: {
-    color: TravelColors.mutedText,
+  memoryStackCopy: {
+    flex: 1,
+    minWidth: 180,
+    gap: 4,
+  },
+  memoryStackTitle: {
+    color: TravelColors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  memoryStackBody: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  memoryStackAction: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  memoryStackActionText: {
+    color: TravelColors.primary,
     fontSize: 12,
-    lineHeight: 17,
-    paddingHorizontal: 10,
-    paddingTop: 4,
-    paddingBottom: 10,
+    fontWeight: '700',
+  },
+  galleryBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(12, 23, 34, 0.5)',
+    justifyContent: 'center',
+    padding: 18,
+  },
+  gallerySheet: {
+    maxHeight: '86%',
+    borderRadius: 24,
+    backgroundColor: TravelColors.surface,
+    overflow: 'hidden',
+  },
+  galleryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: TravelColors.border,
+  },
+  galleryHeaderCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  galleryTitle: {
+    color: TravelColors.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  gallerySubtitle: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+  },
+  galleryCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TravelColors.tintSurface,
+  },
+  galleryContent: {
+    padding: 18,
+    gap: 12,
+  },
+  galleryHeroImage: {
+    width: '100%',
+    height: 320,
+    borderRadius: 20,
+    backgroundColor: '#dfeaf5',
+  },
+  galleryCaption: {
+    color: TravelColors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  galleryMeta: {
+    color: TravelColors.mutedText,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  galleryThumbRail: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  galleryThumbButton: {
+    width: 68,
+    height: 68,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#dfeaf5',
+  },
+  galleryThumbButtonSelected: {
+    borderColor: TravelColors.primary,
+  },
+  galleryThumbImage: {
+    width: '100%',
+    height: '100%',
   },
   legCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
     padding: 16,
     borderRadius: 20,
     backgroundColor: TravelColors.tintSurface,
+  },
+  legMeta: {
+    color: TravelColors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   legIconWrap: {
     width: 36,

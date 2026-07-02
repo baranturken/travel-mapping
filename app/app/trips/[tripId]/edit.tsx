@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -19,6 +19,7 @@ export default function EditTripScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -83,6 +84,10 @@ export default function EditTripScreen() {
     }
   };
 
+  const handleRequestScroll = useCallback((y: number) => {
+    scrollViewRef.current?.scrollTo({ y, animated: true });
+  }, []);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -109,7 +114,10 @@ export default function EditTripScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.select({ ios: 'padding', default: undefined })}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled">
           <TripForm
             eyebrow="Edit trip"
             title="Update the route, then save it back to your map."
@@ -117,6 +125,7 @@ export default function EditTripScreen() {
             submitLabel="Save changes"
             initialValues={toTripFormValues(trip)}
             isSubmitting={isSaving}
+            onRequestScroll={handleRequestScroll}
             onSubmit={handleSubmit}
           />
         </ScrollView>

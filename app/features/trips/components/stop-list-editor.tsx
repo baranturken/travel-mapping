@@ -5,7 +5,7 @@ import type {
   UseFormSetValue,
 } from 'react-hook-form';
 import { Controller } from 'react-hook-form';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { TravelColors } from '@/constants/theme';
 import type { CityOption } from '@/features/locations/world-cities';
@@ -77,6 +77,29 @@ export function StopListEditor({
     });
   };
 
+  const clearStopStoryFields = (index: number) => {
+    const stop = stopValues[index];
+    stop?.memories.forEach((memory) => onQueueMemoryDeletion(memory.imageUri));
+
+    setValue(`stops.${index}.stayLabel`, '', { shouldDirty: true, shouldValidate: true });
+    setValue(`stops.${index}.accommodationName`, '', { shouldDirty: true, shouldValidate: true });
+    setValue(`stops.${index}.accommodationType`, '' as '' | AccommodationType, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setValue(`stops.${index}.accommodationNote`, '', { shouldDirty: true, shouldValidate: true });
+    setValue(`stops.${index}.places`, [], { shouldDirty: true, shouldValidate: true });
+    setValue(`stops.${index}.memories`, [], { shouldDirty: true, shouldValidate: true });
+  };
+
+  const handleHomeBaseToggle = (index: number, nextValue: boolean) => {
+    setValue(`stops.${index}.isHomeBase`, nextValue, { shouldDirty: true, shouldValidate: true });
+
+    if (nextValue) {
+      clearStopStoryFields(index);
+    }
+  };
+
   const handleRemoveStopPress = (index: number) => {
     const stop = stopValues[index];
 
@@ -123,182 +146,222 @@ export function StopListEditor({
         const canRemove = index > 0 && index < stopFields.length - 1;
         const isStart = index === 0;
         const isFinish = index === stopFields.length - 1;
+        const isHomeBase = Boolean(stopValues[index]?.isHomeBase);
+        const showStayLabel = !isStart;
+        const showStorySections = !isStart || !isHomeBase;
 
         return (
-          <View key={field.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{index + 1}</Text>
+          <View key={field.id} style={styles.stopGroup}>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{index + 1}</Text>
+                </View>
+                <View style={styles.headerCopy}>
+                  <Text style={styles.cardTitle}>
+                    {isStart ? 'Start' : isFinish ? 'Final stop' : 'Intermediate stop'}
+                  </Text>
+                  <Text style={styles.cardSubtitle}>
+                    {isStart
+                      ? 'This is where your journey begins.'
+                      : canRemove
+                        ? 'This stop can be removed without deleting the trip.'
+                        : 'Keep at least a start and finish stop in the route.'}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.headerCopy}>
-                <Text style={styles.cardTitle}>
-                  {isStart ? 'Start' : isFinish ? 'Final stop' : 'Intermediate stop'}
-                </Text>
-                <Text style={styles.cardSubtitle}>
-                  {canRemove
-                    ? 'This stop can be removed without deleting the trip.'
-                    : 'Keep at least a start and finish stop in the route.'}
-                </Text>
-              </View>
-            </View>
 
-            <CitySearchField
-              value={stopValues[index] ?? field}
-              errorMessage={stopErrors?.cityName?.message ?? stopErrors?.countryName?.message}
-              onSelect={(city) => handleSelectCity(index, city)}
-              onManualSave={(city) => handleManualCitySave(index, city)}
-            />
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Stay label</Text>
-              <Controller
-                control={control}
-                name={`stops.${index}.stayLabel`}
-                render={({ field: { onChange, onBlur, value } }) => (
-                  <TextInput
-                    style={styles.input}
-                    value={value}
-                    onChangeText={onChange}
-                    onBlur={onBlur}
-                    placeholder="Optional, e.g. 3 nights"
-                    placeholderTextColor={TravelColors.mutedText}
-                  />
-                )}
+              <CitySearchField
+                value={stopValues[index] ?? field}
+                errorMessage={stopErrors?.cityName?.message ?? stopErrors?.countryName?.message}
+                onSelect={(city) => handleSelectCity(index, city)}
+                onManualSave={(city) => handleManualCitySave(index, city)}
               />
-            </View>
 
-            <View style={styles.groupCard}>
-              <Text style={styles.groupTitle}>Accommodation</Text>
-              <Text style={styles.groupBody}>
-                Add the place you stayed so it can appear in the itinerary and on the map.
-              </Text>
-
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Stay name</Text>
-                <Controller
-                  control={control}
-                  name={`stops.${index}.accommodationName`}
-                  render={({ field: { onChange, onBlur, value } }) => (
-                    <TextInput
-                      style={styles.input}
-                      value={value}
-                      onChangeText={onChange}
-                      onBlur={onBlur}
-                      placeholder="Optional, e.g. Blue Harbor Hotel"
-                      placeholderTextColor={TravelColors.mutedText}
+              {isStart ? (
+                <View style={styles.homeCard}>
+                  <View style={styles.homeRow}>
+                    <View style={styles.homeCopy}>
+                      <Text style={styles.groupTitle}>I live here</Text>
+                      <Text style={styles.groupBody}>
+                        Turn this on when the starting city is your home base. We will keep the start simple and hide stay, place, and photo details here.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={isHomeBase}
+                      onValueChange={(value) => handleHomeBaseToggle(index, value)}
+                      trackColor={{ false: '#cfe2f4', true: TravelColors.primary }}
+                      thumbColor="#ffffff"
                     />
-                  )}
-                />
-              </View>
-
-              <Controller
-                control={control}
-                name={`stops.${index}.accommodationType`}
-                render={({ field: { value, onChange } }) => (
-                  <View style={styles.selectorWrap}>
-                    {ACCOMMODATION_TYPES.map((accommodationType) => {
-                      const accommodation = getAccommodationDisplay(accommodationType);
-                      const selected = value === accommodationType;
-
-                      return (
-                        <Pressable
-                          key={accommodationType}
-                          style={[styles.selectorChip, selected && styles.selectorChipSelected]}
-                          onPress={() =>
-                            onChange(selected ? ('' as '' | AccommodationType) : accommodationType)
-                          }>
-                          <Text
-                            style={[
-                              styles.selectorChipText,
-                              selected && styles.selectorChipTextSelected,
-                            ]}>
-                            {accommodation.emoji} {accommodation.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
                   </View>
-                )}
-              />
+                  <Text style={styles.homeHint}>
+                    {isHomeBase
+                      ? 'This stop is marked as where you live.'
+                      : 'Leave this off if the trip starts somewhere other than your home city.'}
+                  </Text>
+                </View>
+              ) : null}
 
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Accommodation note</Text>
-                <Controller
-                  control={control}
-                  name={`stops.${index}.accommodationNote`}
-                  render={({ field: { onChange, onBlur, value } }) => (
-                    <TextInput
-                      style={[styles.input, styles.multilineInput]}
-                      value={value}
-                      onChangeText={onChange}
-                      onBlur={onBlur}
-                      multiline
-                      textAlignVertical="top"
-                      placeholder="Optional, e.g. sea view room near the port"
-                      placeholderTextColor={TravelColors.mutedText}
+              {showStayLabel ? (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>Stay label</Text>
+                  <Controller
+                    control={control}
+                    name={`stops.${index}.stayLabel`}
+                    render={({ field: { onChange, onBlur, value } }) => (
+                      <TextInput
+                        style={styles.input}
+                        value={value}
+                        onChangeText={onChange}
+                        onBlur={onBlur}
+                        placeholder="Optional, e.g. 3 nights"
+                        placeholderTextColor={TravelColors.mutedText}
+                      />
+                    )}
+                  />
+                </View>
+              ) : null}
+
+              {showStorySections ? (
+                <>
+                  <View style={styles.groupCard}>
+                    <Text style={styles.groupTitle}>Accommodation</Text>
+                    <Text style={styles.groupBody}>
+                      Add the place you stayed so it can appear in the itinerary and on the map.
+                    </Text>
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.label}>Accommodation name</Text>
+                      <Controller
+                        control={control}
+                        name={`stops.${index}.accommodationName`}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                          <TextInput
+                            style={styles.input}
+                            value={value}
+                            onChangeText={onChange}
+                            onBlur={onBlur}
+                            placeholder="Optional, e.g. Blue Harbor Hotel or Sea View Apartment"
+                            placeholderTextColor={TravelColors.mutedText}
+                          />
+                        )}
+                      />
+                    </View>
+
+                    <Controller
+                      control={control}
+                      name={`stops.${index}.accommodationType`}
+                      render={({ field: { value, onChange } }) => (
+                        <View style={styles.selectorWrap}>
+                          {ACCOMMODATION_TYPES.map((accommodationType) => {
+                            const accommodation = getAccommodationDisplay(accommodationType);
+                            const selected = value === accommodationType;
+
+                            return (
+                              <Pressable
+                                key={accommodationType}
+                                style={[styles.selectorChip, selected && styles.selectorChipSelected]}
+                                onPress={() =>
+                                  onChange(selected ? ('' as '' | AccommodationType) : accommodationType)
+                                }>
+                                <Text
+                                  style={[
+                                    styles.selectorChipText,
+                                    selected && styles.selectorChipTextSelected,
+                                  ]}>
+                                  {accommodation.emoji} {accommodation.label}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      )}
                     />
-                  )}
-                />
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.label}>Accommodation note</Text>
+                      <Controller
+                        control={control}
+                        name={`stops.${index}.accommodationNote`}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                          <TextInput
+                            style={[styles.input, styles.multilineInput]}
+                            value={value}
+                            onChangeText={onChange}
+                            onBlur={onBlur}
+                            multiline
+                            textAlignVertical="top"
+                            placeholder="Optional, e.g. sea view room near the port"
+                            placeholderTextColor={TravelColors.mutedText}
+                          />
+                        )}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.groupCard}>
+                    <StopPlacesEditor control={control} errors={errors} stopIndex={index} />
+                  </View>
+
+                  <View style={styles.groupCard}>
+                    <StopMemoriesEditor
+                      control={control}
+                      errors={errors}
+                      setValue={setValue}
+                      stopIndex={index}
+                      onQueueMemoryDeletion={onQueueMemoryDeletion}
+                    />
+                  </View>
+                </>
+              ) : null}
+
+              {stopErrors?.latitude?.message || stopErrors?.longitude?.message ? (
+                <Text style={styles.errorText}>
+                  {stopErrors?.latitude?.message ?? stopErrors?.longitude?.message}
+                </Text>
+              ) : null}
+
+              <View style={styles.actionRow}>
+                <Pressable
+                  style={[styles.inlineButton, index === 0 && styles.inlineButtonDisabled]}
+                  disabled={index === 0}
+                  onPress={() => onMoveStop(index, 'up')}>
+                  <Text
+                    style={[styles.inlineButtonText, index === 0 && styles.inlineButtonTextDisabled]}>
+                    Move up
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.inlineButton,
+                    index === stopFields.length - 1 && styles.inlineButtonDisabled,
+                  ]}
+                  disabled={index === stopFields.length - 1}
+                  onPress={() => onMoveStop(index, 'down')}>
+                  <Text
+                    style={[
+                      styles.inlineButtonText,
+                      index === stopFields.length - 1 && styles.inlineButtonTextDisabled,
+                    ]}>
+                    Move down
+                  </Text>
+                </Pressable>
+
+                {canRemove ? (
+                  <Pressable
+                    style={[styles.inlineButton, styles.inlineButtonDanger]}
+                    onPress={() => handleRemoveStopPress(index)}>
+                    <Text style={styles.inlineButtonDangerText}>Remove stop</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
 
-            <View style={styles.groupCard}>
-              <StopPlacesEditor control={control} errors={errors} stopIndex={index} />
-            </View>
-
-            <View style={styles.groupCard}>
-              <StopMemoriesEditor
-                control={control}
-                errors={errors}
-                setValue={setValue}
-                stopIndex={index}
-                onQueueMemoryDeletion={onQueueMemoryDeletion}
-              />
-            </View>
-
-            {stopErrors?.latitude?.message || stopErrors?.longitude?.message ? (
-              <Text style={styles.errorText}>
-                {stopErrors?.latitude?.message ?? stopErrors?.longitude?.message}
-              </Text>
+            {index < stopFields.length - 1 ? (
+              <Pressable style={styles.insertStopBar} onPress={() => onAddStopAfter(index)}>
+                <Text style={styles.insertStopBarText}>+ Add another stop</Text>
+              </Pressable>
             ) : null}
-
-            <View style={styles.actionRow}>
-              <Pressable style={styles.inlineButton} onPress={() => onAddStopAfter(index)}>
-                <Text style={styles.inlineButtonText}>Add stop after</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.inlineButton, index === 0 && styles.inlineButtonDisabled]}
-                disabled={index === 0}
-                onPress={() => onMoveStop(index, 'up')}>
-                <Text
-                  style={[styles.inlineButtonText, index === 0 && styles.inlineButtonTextDisabled]}>
-                  Move up
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.inlineButton,
-                  index === stopFields.length - 1 && styles.inlineButtonDisabled,
-                ]}
-                disabled={index === stopFields.length - 1}
-                onPress={() => onMoveStop(index, 'down')}>
-                <Text
-                  style={[
-                    styles.inlineButtonText,
-                    index === stopFields.length - 1 && styles.inlineButtonTextDisabled,
-                  ]}>
-                  Move down
-                </Text>
-              </Pressable>
-
-              {canRemove ? (
-                <Pressable
-                  style={[styles.inlineButton, styles.inlineButtonDanger]}
-                  onPress={() => handleRemoveStopPress(index)}>
-                  <Text style={styles.inlineButtonDangerText}>Remove stop</Text>
-                </Pressable>
-              ) : null}
-            </View>
           </View>
         );
       })}
@@ -319,6 +382,9 @@ const styles = StyleSheet.create({
     color: TravelColors.secondaryText,
     fontSize: 14,
     lineHeight: 22,
+  },
+  stopGroup: {
+    gap: 10,
   },
   card: {
     backgroundColor: TravelColors.surface,
@@ -388,6 +454,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: TravelColors.border,
     gap: 10,
+  },
+  homeCard: {
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: '#eff7ff',
+    borderWidth: 1,
+    borderColor: '#cfe2f4',
+    gap: 10,
+  },
+  homeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  homeCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  homeHint: {
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+    lineHeight: 20,
   },
   groupTitle: {
     color: TravelColors.text,
@@ -461,5 +550,20 @@ const styles = StyleSheet.create({
     color: TravelColors.danger,
     fontSize: 14,
     fontWeight: '700',
+  },
+  insertStopBar: {
+    minHeight: 44,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#cfe2f4',
+    backgroundColor: '#eff7ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  insertStopBarText: {
+    color: TravelColors.primary,
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

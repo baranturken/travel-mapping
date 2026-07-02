@@ -17,6 +17,8 @@ import type {
 type TripRow = {
   id: string;
   title: string;
+  start_date: string | null;
+  end_date: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -27,6 +29,7 @@ type StopRow = {
   order_index: number;
   city_name: string;
   country_name: string;
+  is_home_base: number;
   stay_label: string | null;
   accommodation_name: string | null;
   accommodation_type: AccommodationType | null;
@@ -73,6 +76,8 @@ function mapTripRow(row: TripRow): TripSummary {
   return {
     id: row.id,
     title: row.title,
+    startDate: row.start_date,
+    endDate: row.end_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -107,6 +112,7 @@ function mapStopRow(row: StopRow, places: TripPlace[], memories: TripMemory[]): 
     orderIndex: row.order_index,
     cityName: row.city_name,
     countryName: row.country_name,
+    isHomeBase: row.is_home_base === 1,
     stayLabel: row.stay_label,
     accommodationName: row.accommodation_name,
     accommodationType: row.accommodation_type,
@@ -154,6 +160,23 @@ function getInputManagedMemoryUris(input: CreateTripInput) {
       .map((memory) => memory.imageUri.trim())
       .filter((imageUri) => isManagedMemoryUri(imageUri)),
   );
+}
+
+function getLegStopIds(stopIds: string[], legIndex: number, totalLegCount: number) {
+  const fromStopId = stopIds[legIndex];
+  const toStopId =
+    totalLegCount === stopIds.length && legIndex === totalLegCount - 1
+      ? stopIds[0]
+      : stopIds[legIndex + 1];
+
+  if (!fromStopId || !toStopId) {
+    throw new Error('Trip legs do not line up with the selected stops.');
+  }
+
+  return {
+    fromStopId,
+    toStopId,
+  };
 }
 
 async function insertStopChildren(
@@ -222,6 +245,8 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
         SELECT
           trips.id,
           trips.title,
+          trips.start_date,
+          trips.end_date,
           trips.created_at,
           trips.updated_at,
           (SELECT COUNT(*) FROM stops WHERE stops.trip_id = trips.id) AS stop_count,
@@ -255,6 +280,7 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
       const tripRow = await db.getFirstAsync<TripRow>(
         `
           SELECT id, title, created_at, updated_at
+          , start_date, end_date
           FROM trips
           WHERE id = ?
         `,
@@ -274,6 +300,7 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
               order_index,
               city_name,
               country_name,
+              is_home_base,
               stay_label,
               accommodation_name,
               accommodation_type,
@@ -353,16 +380,22 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
       const tripId = createId('trip');
       const stopIds = input.stops.map(() => createId('stop'));
 
+      if (input.legs.length !== input.stops.length - 1 && input.legs.length !== input.stops.length) {
+        throw new Error('Trip legs do not line up with the selected stops.');
+      }
+
       await db.execAsync('BEGIN IMMEDIATE TRANSACTION');
 
       try {
         await db.runAsync(
           `
-            INSERT INTO trips (id, title, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO trips (id, title, start_date, end_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
           `,
           tripId,
           input.title.trim(),
+          input.startDate,
+          input.endDate,
           now,
           now,
         );
@@ -378,6 +411,7 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
                 order_index,
                 city_name,
                 country_name,
+                is_home_base,
                 stay_label,
                 accommodation_name,
                 accommodation_type,
@@ -387,13 +421,14 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
                 created_at,
                 updated_at
               )
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             stopId,
             tripId,
             index,
             stop.cityName.trim(),
             stop.countryName.trim(),
+            stop.isHomeBase ? 1 : 0,
             stop.stayLabel?.trim() ? stop.stayLabel.trim() : null,
             stop.accommodationName?.trim() ? stop.accommodationName.trim() : null,
             stop.accommodationType ?? null,
@@ -408,6 +443,8 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
         }
 
         for (const [index, leg] of input.legs.entries()) {
+          const { fromStopId, toStopId } = getLegStopIds(stopIds, index, input.legs.length);
+
           await db.runAsync(
             `
               INSERT INTO legs (
@@ -425,8 +462,8 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
             `,
             createId('leg'),
             tripId,
-            stopIds[index],
-            stopIds[index + 1],
+            fromStopId,
+            toStopId,
             index,
             leg.transportType,
             leg.transportLabel?.trim() ? leg.transportLabel.trim() : null,
@@ -449,16 +486,22 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
       const existingManagedMemoryUris = await getTripMemoryUris(db, tripId);
       const nextManagedMemoryUris = new Set(getInputManagedMemoryUris(input));
 
+      if (input.legs.length !== input.stops.length - 1 && input.legs.length !== input.stops.length) {
+        throw new Error('Trip legs do not line up with the selected stops.');
+      }
+
       await db.execAsync('BEGIN IMMEDIATE TRANSACTION');
 
       try {
         await db.runAsync(
           `
             UPDATE trips
-            SET title = ?, updated_at = ?
+            SET title = ?, start_date = ?, end_date = ?, updated_at = ?
             WHERE id = ?
           `,
           input.title.trim(),
+          input.startDate,
+          input.endDate,
           now,
           tripId,
         );
@@ -477,6 +520,7 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
                 order_index,
                 city_name,
                 country_name,
+                is_home_base,
                 stay_label,
                 accommodation_name,
                 accommodation_type,
@@ -486,13 +530,14 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
                 created_at,
                 updated_at
               )
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             stopId,
             tripId,
             index,
             stop.cityName.trim(),
             stop.countryName.trim(),
+            stop.isHomeBase ? 1 : 0,
             stop.stayLabel?.trim() ? stop.stayLabel.trim() : null,
             stop.accommodationName?.trim() ? stop.accommodationName.trim() : null,
             stop.accommodationType ?? null,
@@ -507,6 +552,8 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
         }
 
         for (const [index, leg] of input.legs.entries()) {
+          const { fromStopId, toStopId } = getLegStopIds(stopIds, index, input.legs.length);
+
           await db.runAsync(
             `
               INSERT INTO legs (
@@ -524,8 +571,8 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
             `,
             createId('leg'),
             tripId,
-            stopIds[index],
-            stopIds[index + 1],
+            fromStopId,
+            toStopId,
             index,
             leg.transportType,
             leg.transportLabel?.trim() ? leg.transportLabel.trim() : null,

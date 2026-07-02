@@ -54,8 +54,8 @@ export default function TripsHomeScreen() {
           <Text style={styles.eyebrow}>Travel Mapping</Text>
           <Text style={styles.title}>Build a clean trip story you can read on a map.</Text>
           <Text style={styles.description}>
-            Save multi-stop journeys locally, keep transport legs in order, and open each trip as a
-            calm blue-and-white route summary.
+            Save multi-stop journeys, keep transport legs in order, and see each trip as a real
+            road-following route with stats and a shareable story card.
           </Text>
 
           <Pressable style={styles.primaryButton} onPress={() => router.push('/trips/new')}>
@@ -67,7 +67,7 @@ export default function TripsHomeScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Saved trips</Text>
-            <Text style={styles.sectionSubtitle}>Local-first for this MVP slice</Text>
+            <Text style={styles.sectionSubtitle}>Stored locally on this device</Text>
           </View>
 
           {isLoading ? (
@@ -90,8 +90,8 @@ export default function TripsHomeScreen() {
               </View>
               <Text style={styles.emptyTitle}>No trips yet</Text>
               <Text style={styles.emptyBody}>
-                Start with a title and at least two stops. Each saved trip gets its own straight-line
-                map and leg-by-leg summary.
+                Start with a title and at least two stops. Each trip gets a real road-following map,
+                leg-by-leg summary, and a shareable story card.
               </Text>
               <Pressable style={styles.secondaryButton} onPress={() => router.push('/trips/new')}>
                 <Text style={styles.secondaryButtonText}>Build your first itinerary</Text>
@@ -117,7 +117,7 @@ export default function TripsHomeScreen() {
                     {trip.firstStopLabel} → {trip.lastStopLabel}
                   </Text>
                   <View style={styles.tripMetaRow}>
-                    <Text style={styles.tripMeta}>{trip.stopCount} stops</Text>
+                    <Text style={styles.tripMeta}>{trip.stopCount} {trip.stopCount === 1 ? 'stop' : 'stops'}</Text>
                     <Text style={styles.tripMeta}>{formatTripUpdatedAt(trip.updatedAt)}</Text>
                   </View>
                 </Pressable>

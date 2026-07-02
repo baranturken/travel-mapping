@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -14,6 +14,7 @@ export default function CreateTripScreen() {
   const db = useSQLiteContext();
   const repository = useMemo(() => createSQLiteTripRepository(db), [db]);
   const [isSaving, setIsSaving] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const handleSubmit = async (input: CreateTripInput) => {
     try {
@@ -31,13 +32,20 @@ export default function CreateTripScreen() {
     }
   };
 
+  const handleRequestScroll = useCallback((y: number) => {
+    scrollViewRef.current?.scrollTo({ y, animated: true });
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.select({ ios: 'padding', default: undefined })}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <TripForm isSubmitting={isSaving} onSubmit={handleSubmit} />
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled">
+          <TripForm isSubmitting={isSaving} onRequestScroll={handleRequestScroll} onSubmit={handleSubmit} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

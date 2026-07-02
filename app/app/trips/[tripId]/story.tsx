@@ -1,0 +1,935 @@
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
+
+import * as Sharing from 'expo-sharing';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
+import { WebView } from 'react-native-webview';
+
+import { TravelColors } from '@/constants/theme';
+import { TripStoryCard } from '@/features/trips/components/trip-story-card';
+import type { LegRouteData } from '@/features/trips/components/trip-map-webview';
+import { formatTripDateRange } from '@/features/trips/mappers';
+import { getOsrmProfile } from '@/features/trips/routing/osrm-route-fetcher';
+import { buildRouteCacheKey, getCachedRoute } from '@/features/trips/routing/route-cache';
+import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
+import { computeTripStats, formatDistanceKm } from '@/features/trips/trip-stats';
+import type { TripDetail } from '@/features/trips/types';
+import {
+  buildPhotoStoryHtml,
+  type PhotoCropParams,
+} from '@/features/trips/photo-story-renderer';
+
+type PickerMemory = {
+  id: string;
+  stopLabel: string;
+  imageUri: string;
+};
+
+// injectedJavaScript is executed by react-native-webview AFTER the
+// ReactNativeWebView bridge is injected — this guarantees the bridge
+// exists when runStoryCanvas calls postMessage.
+const TRIGGER_JS =
+  'if(window.runStoryCanvas){window.runStoryCanvas().catch(function(e){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage("error:"+String(e));});}true;';
+
+export default function TripStoryScreen() {
+  const router = useRouter();
+  const { tripId } = useLocalSearchParams<{ tripId: string }>();
+  const db = useSQLiteContext();
+  const repository = useMemo(() => createSQLiteTripRepository(db), [db]);
+
+  const [trip, setTrip] = useState<TripDetail | null>(null);
+  const [legRoutes, setLegRoutes] = useState<Record<string, LegRouteData>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [photoStoryHtml, setPhotoStoryHtml] = useState<string | null>(null);
+  const [isGeneratingPhotoStory, setIsGeneratingPhotoStory] = useState(false);
+  const [showRoute, setShowRoute] = useState(true);
+
+  // Photo picker state
+  const [pickerMemories, setPickerMemories] = useState<PickerMemory[]>([]);
+  const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false);
+
+  // Crop flow state
+  const [cropQueue, setCropQueue] = useState<string[]>([]);
+  const [cropCurrentIndex, setCropCurrentIndex] = useState(0);
+  const [cropParamsAccumulated, setCropParamsAccumulated] = useState<PhotoCropParams[]>([]);
+  const [isCropOpen, setIsCropOpen] = useState(false);
+
+  const loadStory = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    if (!tripId) {
+      setTrip(null);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const nextTrip = await repository.getTripDetail(tripId);
+      setTrip(nextTrip);
+
+      if (nextTrip) {
+        const stopLookup = new Map(nextTrip.stops.map((stop) => [stop.id, stop]));
+        const routes: Record<string, LegRouteData> = {};
+
+        await Promise.all(
+          nextTrip.legs.map(async (leg) => {
+            const profile = getOsrmProfile(leg.transportType);
+            if (!profile) return;
+            const from = stopLookup.get(leg.fromStopId);
+            const to = stopLookup.get(leg.toStopId);
+            if (!from || !to) return;
+            const cacheKey = buildRouteCacheKey(
+              from.latitude, from.longitude, to.latitude, to.longitude, profile,
+            );
+            const cached = await getCachedRoute(db, cacheKey);
+            if (cached) {
+              routes[leg.id] = {
+                geometry: cached.geometry,
+                distanceMeters: cached.distanceMeters,
+                durationSeconds: cached.durationSeconds,
+              };
+            }
+          }),
+        );
+
+        setLegRoutes(routes);
+      } else {
+        setLegRoutes({});
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      setTrip(null);
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [db, repository, tripId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStory();
+    }, [loadStory]),
+  );
+
+  const handleShare = useCallback(async () => {
+    if (!trip) return;
+
+    const stats = computeTripStats(trip, legRoutes);
+    const dateRange = formatTripDateRange(trip.startDate, trip.endDate);
+    const distance =
+      stats.totalDistanceKm !== null ? formatDistanceKm(stats.totalDistanceKm) : null;
+
+    const statsLine =
+      `🌍 ${stats.countryCount} ${stats.countryCount === 1 ? 'country' : 'countries'} · 📍 ${stats.cityCount} ${stats.cityCount === 1 ? 'city' : 'cities'}` +
+      (stats.dayCount !== null ? ` · 🗓️ ${stats.dayCount} ${stats.dayCount === 1 ? 'day' : 'days'}` : '') +
+      (distance ? ` · 🛣️ ${distance}` : '');
+
+    const routeLines = trip.stops
+      .map((stop, index) => `${index + 1}. ${stop.cityName}, ${stop.countryName}`)
+      .join('\n');
+
+    const message =
+      `✈️ ${trip.title}\n` +
+      (dateRange ? `📅 ${dateRange}\n` : '') +
+      `${statsLine}\n\n` +
+      `Route:\n${routeLines}\n\n` +
+      `Made with Travel Mapping`;
+
+    try {
+      await Share.share({ message });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Could not share trip', detail);
+    }
+  }, [legRoutes, trip]);
+
+  const handleOpenPhotoPicker = useCallback(() => {
+    if (!trip || isGeneratingPhotoStory) return;
+
+    const allMemories: PickerMemory[] = trip.stops.flatMap((s) =>
+      s.memories.map((m) => ({
+        id: m.id,
+        stopLabel: `${s.cityName}, ${s.countryName}`,
+        imageUri: m.imageUri,
+      })),
+    );
+
+    if (allMemories.length === 0) {
+      setIsGeneratingPhotoStory(true);
+      const stats = computeTripStats(trip, legRoutes);
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+      return;
+    }
+
+    setPickerMemories(allMemories);
+    setIsPhotoPickerOpen(true);
+  }, [isGeneratingPhotoStory, legRoutes, showRoute, trip]);
+
+  const handleShareCardAsImage = useCallback(() => {
+    if (!trip || isGeneratingPhotoStory) return;
+    setIsGeneratingPhotoStory(true);
+    const stats = computeTripStats(trip, legRoutes);
+    setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+  }, [isGeneratingPhotoStory, legRoutes, showRoute, trip]);
+
+  // Called after photo picker confirms URIs — opens crop flow
+  const handlePickerConfirm = useCallback((selectedUris: string[]) => {
+    setIsPhotoPickerOpen(false);
+    if (selectedUris.length === 0) {
+      if (!trip) return;
+      setIsGeneratingPhotoStory(true);
+      const stats = computeTripStats(trip, legRoutes);
+      setPhotoStoryHtml(buildPhotoStoryHtml(trip, stats, legRoutes, [], { showRoute }));
+      return;
+    }
+    setCropQueue(selectedUris);
+    setCropCurrentIndex(0);
+    setCropParamsAccumulated([]);
+    setIsCropOpen(true);
+  }, [legRoutes, showRoute, trip]);
+
+  // Generate story after all crops are decided
+  // Crop params are passed to the canvas renderer which applies them via coverImage.
+  const generateStory = useCallback(async (uris: string[], params: PhotoCropParams[]) => {
+    if (!trip) return;
+    setIsGeneratingPhotoStory(true);
+
+    const photoBase64s: string[] = [];
+    for (const uri of uris) {
+      try {
+        const b64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        photoBase64s.push(b64);
+      } catch {
+        // skip unreadable
+      }
+    }
+
+    const stats = computeTripStats(trip, legRoutes);
+    setPhotoStoryHtml(
+      buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, { showRoute, cropParams: params }),
+    );
+  }, [legRoutes, showRoute, trip]);
+
+  const handleCropConfirm = useCallback((params: PhotoCropParams) => {
+    const newParams = [...cropParamsAccumulated, params];
+    if (cropCurrentIndex + 1 < cropQueue.length) {
+      setCropParamsAccumulated(newParams);
+      setCropCurrentIndex((i) => i + 1);
+    } else {
+      setIsCropOpen(false);
+      void generateStory(cropQueue, newParams);
+    }
+  }, [cropCurrentIndex, cropParamsAccumulated, cropQueue, generateStory]);
+
+  const handleCropSkip = useCallback(() => {
+    const defaultParams: PhotoCropParams = { normX: 0, normY: 0, scale: 1 };
+    handleCropConfirm(defaultParams);
+  }, [handleCropConfirm]);
+
+  const handleCropSkipAll = useCallback(() => {
+    setIsCropOpen(false);
+    void generateStory(cropQueue, []);
+  }, [cropQueue, generateStory]);
+
+  const handlePhotoStoryRendered = useCallback(
+    async (event: { nativeEvent: { data: string } }) => {
+      const data = event.nativeEvent.data;
+      setPhotoStoryHtml(null);
+
+      if (data.startsWith('data:image')) {
+        try {
+          const base64 = data.split(',')[1];
+          const fileUri = (FileSystem.cacheDirectory ?? '') + 'travel-mapping-story.jpg';
+          await FileSystem.writeAsStringAsync(fileUri, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'image/jpeg',
+              dialogTitle: trip?.title,
+            });
+          } else {
+            Alert.alert('Sharing not available', 'This device does not support image sharing.');
+          }
+        } catch (err) {
+          Alert.alert(
+            'Could not generate story image',
+            err instanceof Error ? err.message : 'Please try again.',
+          );
+        }
+      } else {
+        Alert.alert('Could not render story image', data.replace('error:', ''));
+      }
+
+      setIsGeneratingPhotoStory(false);
+    },
+    [trip],
+  );
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        <View style={styles.centeredState}>
+          <ActivityIndicator color={TravelColors.primary} />
+          <Text style={styles.loadingText}>Preparing your story…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!trip) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        <View style={styles.centeredState}>
+          <Text style={styles.emptyTitle}>{errorMessage ? 'Could not load story' : 'Trip not found'}</Text>
+          <Text style={styles.emptyBody}>
+            {errorMessage ?? 'This itinerary is no longer available in local storage.'}
+          </Text>
+          <Pressable style={styles.primaryButton} onPress={() => router.back()}>
+            <Text style={styles.primaryButtonText}>Go back</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={18} color={TravelColors.primary} />
+          <Text style={styles.backButtonText}>Back</Text>
+        </Pressable>
+
+        <View style={styles.cardWrap}>
+          <TripStoryCard trip={trip} legRoutes={legRoutes} />
+        </View>
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <View style={styles.routeToggleRow}>
+          <Text style={styles.routeToggleLabel}>Include route drawing</Text>
+          <Pressable
+            style={[styles.routeToggle, showRoute && styles.routeToggleActive]}
+            onPress={() => setShowRoute((v) => !v)}>
+            <Text style={[styles.routeToggleText, showRoute && styles.routeToggleTextActive]}>
+              {showRoute ? 'On' : 'Off'}
+            </Text>
+          </Pressable>
+        </View>
+
+        <Pressable
+          style={[styles.photoStoryButton, isGeneratingPhotoStory && styles.buttonDisabled]}
+          disabled={isGeneratingPhotoStory}
+          onPress={handleOpenPhotoPicker}>
+          <Ionicons name="images-outline" size={18} color={TravelColors.primary} />
+          <Text style={styles.photoStoryButtonText}>
+            {isGeneratingPhotoStory ? 'Building story…' : 'Share as photo story'}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.cardImageButton, isGeneratingPhotoStory && styles.buttonDisabled]}
+          disabled={isGeneratingPhotoStory}
+          onPress={handleShareCardAsImage}>
+          <Ionicons name="card-outline" size={18} color={TravelColors.primary} />
+          <Text style={styles.cardImageButtonText}>Share story card</Text>
+        </Pressable>
+        <Pressable style={styles.shareButton} onPress={() => void handleShare()}>
+          <Ionicons name="share-outline" size={18} color="#ffffff" />
+          <Text style={styles.shareButtonText}>Share as text</Text>
+        </Pressable>
+      </View>
+
+      {photoStoryHtml ? (
+        <View style={styles.hiddenRenderer}>
+          <WebView
+            source={{ html: photoStoryHtml }}
+            injectedJavaScript={TRIGGER_JS}
+            onMessage={handlePhotoStoryRendered}
+            style={styles.hiddenWebView}
+            javaScriptEnabled
+            originWhitelist={['*']}
+          />
+        </View>
+      ) : null}
+
+      <PhotoPickerModal
+        memories={pickerMemories}
+        visible={isPhotoPickerOpen}
+        onConfirm={handlePickerConfirm}
+        onCancel={() => setIsPhotoPickerOpen(false)}
+      />
+
+      {isCropOpen && cropQueue[cropCurrentIndex] ? (
+        <CropModal
+          uri={cropQueue[cropCurrentIndex]}
+          photoNumber={cropCurrentIndex + 1}
+          totalPhotos={cropQueue.length}
+          onConfirm={handleCropConfirm}
+          onSkipThis={handleCropSkip}
+          onSkipAll={handleCropSkipAll}
+        />
+      ) : null}
+    </SafeAreaView>
+  );
+}
+
+// ── Photo picker ──────────────────────────────────────────────────────────────
+
+function PhotoPickerModal({
+  memories,
+  visible,
+  onConfirm,
+  onCancel,
+}: {
+  memories: PickerMemory[];
+  visible: boolean;
+  onConfirm(selectedUris: string[]): void;
+  onCancel(): void;
+}) {
+  const [selectedUris, setSelectedUris] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (visible) setSelectedUris([]);
+  }, [visible]);
+
+  const toggle = (uri: string) => {
+    setSelectedUris((prev) => {
+      if (prev.includes(uri)) return prev.filter((u) => u !== uri);
+      if (prev.length >= 4) return prev;
+      return [...prev, uri];
+    });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View style={pickerStyles.backdrop}>
+        <View style={pickerStyles.sheet}>
+          <View style={pickerStyles.header}>
+            <View style={pickerStyles.headerCopy}>
+              <Text style={pickerStyles.title}>Choose photos</Text>
+              <Text style={pickerStyles.subtitle}>
+                {selectedUris.length === 0
+                  ? 'Select up to 4 for your story'
+                  : `${selectedUris.length} of 4 selected`}
+              </Text>
+            </View>
+            <Pressable style={pickerStyles.closeButton} onPress={onCancel}>
+              <Ionicons name="close" size={20} color={TravelColors.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={pickerStyles.grid}>
+            {memories.map((mem) => {
+              const orderIndex = selectedUris.indexOf(mem.imageUri);
+              const isSelected = orderIndex !== -1;
+              const isDisabled = !isSelected && selectedUris.length >= 4;
+
+              return (
+                <Pressable
+                  key={mem.id}
+                  style={[
+                    pickerStyles.thumb,
+                    isSelected && pickerStyles.thumbSelected,
+                    isDisabled && pickerStyles.thumbDisabled,
+                  ]}
+                  onPress={() => toggle(mem.imageUri)}>
+                  <Image source={{ uri: mem.imageUri }} style={pickerStyles.thumbImage} />
+                  {isSelected ? (
+                    <View style={pickerStyles.orderBadge}>
+                      <Text style={pickerStyles.orderBadgeText}>{orderIndex + 1}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={pickerStyles.thumbLabel} numberOfLines={1}>
+                    {mem.stopLabel}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={pickerStyles.footer}>
+            <Pressable
+              style={[pickerStyles.confirmButton, selectedUris.length === 0 && pickerStyles.confirmDisabled]}
+              disabled={selectedUris.length === 0}
+              onPress={() => onConfirm(selectedUris)}>
+              <Ionicons name="images-outline" size={18} color="#ffffff" />
+              <Text style={pickerStyles.confirmText}>
+                {selectedUris.length === 0 ? 'Select photos first' : 'Crop & create story'}
+              </Text>
+            </Pressable>
+            <Pressable style={pickerStyles.skipButton} onPress={() => onConfirm([])}>
+              <Text style={pickerStyles.skipText}>Share without photos</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Crop modal ────────────────────────────────────────────────────────────────
+
+const CROP_FRAME = 296;
+
+function CropModal({
+  uri,
+  photoNumber,
+  totalPhotos,
+  onConfirm,
+  onSkipThis,
+  onSkipAll,
+}: {
+  uri: string;
+  photoNumber: number;
+  totalPhotos: number;
+  onConfirm(params: PhotoCropParams): void;
+  onSkipThis(): void;
+  onSkipAll(): void;
+}) {
+  const [cropState, setCropState] = useState<PhotoCropParams>({ normX: 0, normY: 0, scale: 1 });
+  const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null);
+  const cropRef = useRef(cropState);
+  cropRef.current = cropState;
+  const overflowRef = useRef({ x: 0, y: 0 });
+  const baseNorm = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setCropState({ normX: 0, normY: 0, scale: 1 });
+    setImgNaturalSize(null);
+    Image.getSize(uri, (w, h) => setImgNaturalSize({ w, h }), () => {});
+  }, [uri]);
+
+  useEffect(() => {
+    if (!imgNaturalSize) return;
+    const coverBase = Math.max(CROP_FRAME / imgNaturalSize.w, CROP_FRAME / imgNaturalSize.h);
+    const s = coverBase * cropState.scale;
+    const dw = imgNaturalSize.w * s;
+    const dh = imgNaturalSize.h * s;
+    overflowRef.current = {
+      x: Math.max(0, dw - CROP_FRAME),
+      y: Math.max(0, dh - CROP_FRAME),
+    };
+  }, [imgNaturalSize, cropState.scale]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        baseNorm.current = { x: cropRef.current.normX, y: cropRef.current.normY };
+      },
+      onPanResponderMove: (_, g) => {
+        const ox = overflowRef.current.x;
+        const oy = overflowRef.current.y;
+        setCropState((prev) => ({
+          ...prev,
+          normX: ox > 0 ? Math.max(-0.5, Math.min(0.5, baseNorm.current.x + g.dx / ox)) : 0,
+          normY: oy > 0 ? Math.max(-0.5, Math.min(0.5, baseNorm.current.y + g.dy / oy)) : 0,
+        }));
+      },
+    }),
+  ).current;
+
+  const displayMetrics = useMemo(() => {
+    if (!imgNaturalSize) return null;
+    const coverBase = Math.max(CROP_FRAME / imgNaturalSize.w, CROP_FRAME / imgNaturalSize.h);
+    const s = coverBase * cropState.scale;
+    const dw = imgNaturalSize.w * s;
+    const dh = imgNaturalSize.h * s;
+    const ox = Math.max(0, dw - CROP_FRAME);
+    const oy = Math.max(0, dh - CROP_FRAME);
+    return {
+      left: (CROP_FRAME - dw) / 2 + cropState.normX * ox,
+      top: (CROP_FRAME - dh) / 2 + cropState.normY * oy,
+      width: dw,
+      height: dh,
+    };
+  }, [imgNaturalSize, cropState]);
+
+  const adjustScale = (delta: number) => {
+    setCropState((prev) => ({
+      normX: 0,
+      normY: 0,
+      scale: Math.max(1, Math.min(3, prev.scale + delta)),
+    }));
+  };
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onSkipThis}>
+      <View style={cropStyles.backdrop}>
+        <View style={cropStyles.sheet}>
+          <View style={cropStyles.header}>
+            <View style={cropStyles.headerCopy}>
+              <Text style={cropStyles.title}>Crop photo {photoNumber} of {totalPhotos}</Text>
+              <Text style={cropStyles.subtitle}>Drag to reposition · +/− to zoom</Text>
+            </View>
+            {totalPhotos > 1 ? (
+              <Pressable onPress={onSkipAll}>
+                <Text style={cropStyles.skipAllText}>Skip all</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={cropStyles.frameArea}>
+            <View
+              style={[cropStyles.frame, { width: CROP_FRAME, height: CROP_FRAME }]}
+              {...panResponder.panHandlers}>
+              {displayMetrics ? (
+                <Image
+                  source={{ uri }}
+                  style={{
+                    position: 'absolute',
+                    width: displayMetrics.width,
+                    height: displayMetrics.height,
+                    left: displayMetrics.left,
+                    top: displayMetrics.top,
+                  }}
+                  resizeMode="stretch"
+                />
+              ) : (
+                <ActivityIndicator color={TravelColors.primary} />
+              )}
+              {/* Corner guide marks */}
+              <View style={[cropStyles.corner, cropStyles.cornerTL]} />
+              <View style={[cropStyles.corner, cropStyles.cornerTR]} />
+              <View style={[cropStyles.corner, cropStyles.cornerBL]} />
+              <View style={[cropStyles.corner, cropStyles.cornerBR]} />
+            </View>
+          </View>
+
+          <View style={cropStyles.zoomRow}>
+            <Pressable style={cropStyles.zoomButton} onPress={() => adjustScale(-0.15)}>
+              <Ionicons name="remove" size={22} color={TravelColors.primary} />
+            </Pressable>
+            <Text style={cropStyles.zoomLabel}>{Math.round(cropState.scale * 100)}%</Text>
+            <Pressable style={cropStyles.zoomButton} onPress={() => adjustScale(0.15)}>
+              <Ionicons name="add" size={22} color={TravelColors.primary} />
+            </Pressable>
+          </View>
+
+          <View style={cropStyles.footer}>
+            <Pressable style={cropStyles.skipButton} onPress={onSkipThis}>
+              <Text style={cropStyles.skipText}>
+                {photoNumber < totalPhotos ? 'Skip this photo' : 'Skip'}
+              </Text>
+            </Pressable>
+            <Pressable style={cropStyles.confirmButton} onPress={() => onConfirm(cropState)}>
+              <Text style={cropStyles.confirmText}>
+                {photoNumber < totalPhotos ? `Next photo →` : 'Create story'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: TravelColors.background },
+  content: { padding: 20, gap: 16, alignItems: 'center' },
+  backButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  backButtonText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  cardWrap: { paddingVertical: 12, alignItems: 'center' },
+  centeredState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  loadingText: { color: TravelColors.mutedText, fontSize: 14 },
+  emptyTitle: { color: TravelColors.text, fontSize: 20, fontWeight: '700' },
+  emptyBody: {
+    color: TravelColors.secondaryText,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  primaryButton: {
+    marginTop: 4,
+    backgroundColor: TravelColors.primary,
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+  primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  footer: {
+    padding: 20,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: TravelColors.border,
+    backgroundColor: TravelColors.surface,
+  },
+  routeToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  routeToggleLabel: { color: TravelColors.secondaryText, fontSize: 13, fontWeight: '600' },
+  routeToggle: {
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  routeToggleActive: {
+    backgroundColor: TravelColors.primary,
+    borderColor: TravelColors.primary,
+  },
+  routeToggleText: { color: TravelColors.primary, fontSize: 13, fontWeight: '700' },
+  routeToggleTextActive: { color: '#ffffff' },
+  photoStoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  photoStoryButtonText: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
+  cardImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  cardImageButtonText: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
+  buttonDisabled: { opacity: 0.6 },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.primary,
+  },
+  shareButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  hiddenRenderer: { position: 'absolute', left: -1200, top: -2100, width: 1080, height: 1920 },
+  hiddenWebView: { flex: 1 },
+});
+
+const pickerStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(12,23,34,0.55)', justifyContent: 'flex-end' },
+  sheet: {
+    maxHeight: '80%',
+    backgroundColor: TravelColors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: TravelColors.border,
+    gap: 12,
+  },
+  headerCopy: { flex: 1, gap: 2 },
+  title: { color: TravelColors.text, fontSize: 18, fontWeight: '700' },
+  subtitle: { color: TravelColors.secondaryText, fontSize: 13 },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TravelColors.tintSurface,
+  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 16, gap: 12 },
+  thumb: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2.5,
+    borderColor: 'transparent',
+    backgroundColor: TravelColors.tintSurface,
+    position: 'relative',
+  },
+  thumbSelected: { borderColor: TravelColors.primary },
+  thumbDisabled: { opacity: 0.4 },
+  thumbImage: { width: '100%', height: '100%' },
+  thumbLabel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  orderBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: TravelColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orderBadgeText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  footer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: TravelColors.border,
+    gap: 4,
+  },
+  confirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.primary,
+  },
+  confirmDisabled: { opacity: 0.45 },
+  confirmText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  skipButton: { alignItems: 'center', paddingVertical: 10 },
+  skipText: { color: TravelColors.secondaryText, fontSize: 13, fontWeight: '600' },
+});
+
+const cropStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(8,16,30,0.82)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: TravelColors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: TravelColors.border,
+  },
+  headerCopy: { gap: 2 },
+  title: { color: TravelColors.text, fontSize: 17, fontWeight: '700' },
+  subtitle: { color: TravelColors.secondaryText, fontSize: 13 },
+  skipAllText: { color: TravelColors.primary, fontSize: 14, fontWeight: '600' },
+  frameArea: { alignItems: 'center', paddingVertical: 24 },
+  frame: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    position: 'relative',
+  },
+  corner: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderColor: '#ffffff',
+    opacity: 0.9,
+  },
+  cornerTL: { top: 8, left: 8, borderTopWidth: 2.5, borderLeftWidth: 2.5, borderTopLeftRadius: 4 },
+  cornerTR: { top: 8, right: 8, borderTopWidth: 2.5, borderRightWidth: 2.5, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 8, left: 8, borderBottomWidth: 2.5, borderLeftWidth: 2.5, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 8, right: 8, borderBottomWidth: 2.5, borderRightWidth: 2.5, borderBottomRightRadius: 4 },
+  zoomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    paddingVertical: 4,
+  },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TravelColors.tintSurface,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+  },
+  zoomLabel: { color: TravelColors.text, fontSize: 15, fontWeight: '700', minWidth: 50, textAlign: 'center' },
+  footer: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: TravelColors.border,
+  },
+  skipButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: TravelColors.borderStrong,
+    backgroundColor: TravelColors.tintSurface,
+  },
+  skipText: { color: TravelColors.primary, fontSize: 14, fontWeight: '700' },
+  confirmButton: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    paddingVertical: 14,
+    backgroundColor: TravelColors.primary,
+  },
+  confirmText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+});
