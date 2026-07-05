@@ -146,6 +146,11 @@ export default function SignInScreen() {
                   onSubmitEditing={handleSignIn}
                   returnKeyType="go"
                 />
+                <Pressable
+                  style={styles.forgotLink}
+                  onPress={() => router.push('/(auth)/forgot-password' as Href)}>
+                  <Text style={styles.forgotLinkText}>Forgot password?</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -314,4 +319,6 @@ const styles = StyleSheet.create({
   },
   footerText: { color: TravelColors.secondaryText, fontSize: 15 },
   footerLink: { color: TravelColors.primary, fontSize: 15, fontWeight: '700' },
+  forgotLink: { alignSelf: 'flex-end', marginTop: 2 },
+  forgotLinkText: { color: TravelColors.primary, fontSize: 13, fontWeight: '600' },
 });

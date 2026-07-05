@@ -80,6 +80,7 @@ export default function RootLayout() {
               <Stack.Screen name="trips/shared/[publishedId]" options={{ title: 'Trip' }} />
               <Stack.Screen name="profile/edit" options={{ title: 'Edit profile' }} />
               <Stack.Screen name="users/[userId]" options={{ title: 'Profile' }} />
+              <Stack.Screen name="reset-password" options={{ headerShown: false }} />
             </Stack>
           </SQLiteProvider>
         </AppShellErrorBoundary>

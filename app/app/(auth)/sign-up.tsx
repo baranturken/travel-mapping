@@ -20,31 +20,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
+import { PasswordRequirements } from '@/features/auth/components/password-requirements';
 import { evaluatePassword } from '@/features/auth/password-policy';
 import { supabase } from '@/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
-
-const STRENGTH_COLOR = { weak: '#b53c3c', fair: '#b8860b', strong: '#2d7a47' } as const;
-const STRENGTH_TEXT = { weak: 'Weak', fair: 'Fair', strong: 'Strong' } as const;
-const STRENGTH_STYLE = {
-  weak: { width: '33%', backgroundColor: '#b53c3c' },
-  fair: { width: '66%', backgroundColor: '#b8860b' },
-  strong: { width: '100%', backgroundColor: '#2d7a47' },
-} as const;
-
-function PasswordRule({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <View style={styles.ruleRow}>
-      <Ionicons
-        name={ok ? 'checkmark-circle' : 'ellipse-outline'}
-        size={15}
-        color={ok ? '#2d7a47' : TravelColors.mutedText}
-      />
-      <Text style={[styles.ruleText, ok && styles.ruleTextOk]}>{label}</Text>
-    </View>
-  );
-}
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -173,27 +153,7 @@ export default function SignUpScreen() {
                   secureTextEntry
                   editable={!loading}
                 />
-                {password.length > 0 && (
-                  <View style={styles.policy}>
-                    <View style={styles.strengthRow}>
-                      <View style={styles.strengthTrack}>
-                        <View
-                          style={[
-                            styles.strengthFill,
-                            STRENGTH_STYLE[passwordResult.strength],
-                          ]}
-                        />
-                      </View>
-                      <Text style={[styles.strengthLabel, { color: STRENGTH_COLOR[passwordResult.strength] }]}>
-                        {STRENGTH_TEXT[passwordResult.strength]}
-                      </Text>
-                    </View>
-                    <PasswordRule ok={passwordResult.checks.minLength} label="At least 8 characters" />
-                    <PasswordRule ok={passwordResult.checks.hasLetter} label="Contains a letter" />
-                    <PasswordRule ok={passwordResult.checks.hasNumber} label="Contains a number" />
-                    <PasswordRule ok={passwordResult.checks.notCommon} label="Not a common password" />
-                  </View>
-                )}
+                {password.length > 0 && <PasswordRequirements result={passwordResult} />}
               </View>
 
               <View style={styles.field}>
@@ -312,20 +272,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
-  policy: { gap: 6, marginTop: 8 },
-  strengthRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 },
-  strengthTrack: {
-    flex: 1,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: TravelColors.border,
-    overflow: 'hidden',
-  },
-  strengthFill: { height: 6, borderRadius: 999 },
-  strengthLabel: { fontSize: 12, fontWeight: '700', minWidth: 44, textAlign: 'right' },
-  ruleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  ruleText: { color: TravelColors.mutedText, fontSize: 13 },
-  ruleTextOk: { color: TravelColors.secondaryText },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 },
   dividerLine: { flex: 1, height: 1, backgroundColor: TravelColors.border },
   dividerText: { color: TravelColors.mutedText, fontSize: 13, fontWeight: '600' },
