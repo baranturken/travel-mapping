@@ -2,7 +2,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
+import { TripListSkeleton } from '@/components/skeleton';
 import { formatTripDateRange, formatTripUpdatedAt } from '@/features/trips/mappers';
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
 import type { TripListItem } from '@/features/trips/types';
@@ -77,10 +77,7 @@ export default function TripsScreen() {
           </View>
 
           {isLoading ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator color={TravelColors.primary} />
-              <Text style={styles.loadingText}>Loading your saved trips…</Text>
-            </View>
+            <TripListSkeleton />
           ) : errorMessage ? (
             <View style={styles.errorState}>
               <Text style={styles.emptyTitle}>Could not load saved trips</Text>
@@ -191,8 +188,6 @@ const styles = StyleSheet.create({
   sectionHeader: { gap: 4 },
   sectionTitle: { color: TravelColors.text, fontSize: 21, fontWeight: '700' },
   sectionSubtitle: { color: TravelColors.mutedText, fontSize: 14 },
-  loadingState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32, gap: 10 },
-  loadingText: { color: TravelColors.mutedText, fontSize: 14 },
   emptyState: { alignItems: 'center', gap: 12, paddingVertical: 12 },
   errorState: { alignItems: 'center', gap: 12, paddingVertical: 12 },
   emptyIconWrap: {

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { FeedListSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import { getFeed, getRecommendations } from '@/features/social/social-repository';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
@@ -80,10 +81,7 @@ export default function FeedScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-          <Text style={styles.loadingText}>Loading feed…</Text>
-        </View>
+        <FeedListSkeleton />
       </SafeAreaView>
     );
   }
@@ -172,7 +170,6 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 10,
   },
-  loadingText: { color: TravelColors.mutedText, fontSize: 14 },
   emptyState: {
     flex: 1,
     alignItems: 'center',

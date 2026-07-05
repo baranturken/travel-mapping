@@ -20,9 +20,31 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
+import { evaluatePassword } from '@/features/auth/password-policy';
 import { supabase } from '@/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
+
+const STRENGTH_COLOR = { weak: '#b53c3c', fair: '#b8860b', strong: '#2d7a47' } as const;
+const STRENGTH_TEXT = { weak: 'Weak', fair: 'Fair', strong: 'Strong' } as const;
+const STRENGTH_STYLE = {
+  weak: { width: '33%', backgroundColor: '#b53c3c' },
+  fair: { width: '66%', backgroundColor: '#b8860b' },
+  strong: { width: '100%', backgroundColor: '#2d7a47' },
+} as const;
+
+function PasswordRule({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <View style={styles.ruleRow}>
+      <Ionicons
+        name={ok ? 'checkmark-circle' : 'ellipse-outline'}
+        size={15}
+        color={ok ? '#2d7a47' : TravelColors.mutedText}
+      />
+      <Text style={[styles.ruleText, ok && styles.ruleTextOk]}>{label}</Text>
+    </View>
+  );
+}
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -34,17 +56,19 @@ export default function SignUpScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
 
+  const passwordResult = evaluatePassword(password);
+
   const handleSignUp = async () => {
     if (!email.trim() || !password) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
       return;
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Password mismatch', 'Passwords do not match.');
+    if (!passwordResult.ok) {
+      Alert.alert('Weak password', passwordResult.error ?? 'Choose a stronger password.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Password too short', 'Use at least 6 characters.');
+    if (password !== confirmPassword) {
+      Alert.alert('Password mismatch', 'Passwords do not match.');
       return;
     }
     try {
@@ -144,11 +168,32 @@ export default function SignUpScreen() {
                   style={styles.input}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="At least 6 characters"
+                  placeholder="At least 8 characters"
                   placeholderTextColor={TravelColors.mutedText}
                   secureTextEntry
                   editable={!loading}
                 />
+                {password.length > 0 && (
+                  <View style={styles.policy}>
+                    <View style={styles.strengthRow}>
+                      <View style={styles.strengthTrack}>
+                        <View
+                          style={[
+                            styles.strengthFill,
+                            STRENGTH_STYLE[passwordResult.strength],
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.strengthLabel, { color: STRENGTH_COLOR[passwordResult.strength] }]}>
+                        {STRENGTH_TEXT[passwordResult.strength]}
+                      </Text>
+                    </View>
+                    <PasswordRule ok={passwordResult.checks.minLength} label="At least 8 characters" />
+                    <PasswordRule ok={passwordResult.checks.hasLetter} label="Contains a letter" />
+                    <PasswordRule ok={passwordResult.checks.hasNumber} label="Contains a number" />
+                    <PasswordRule ok={passwordResult.checks.notCommon} label="Not a common password" />
+                  </View>
+                )}
               </View>
 
               <View style={styles.field}>
@@ -267,6 +312,20 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  policy: { gap: 6, marginTop: 8 },
+  strengthRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 },
+  strengthTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: TravelColors.border,
+    overflow: 'hidden',
+  },
+  strengthFill: { height: 6, borderRadius: 999 },
+  strengthLabel: { fontSize: 12, fontWeight: '700', minWidth: 44, textAlign: 'right' },
+  ruleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  ruleText: { color: TravelColors.mutedText, fontSize: 13 },
+  ruleTextOk: { color: TravelColors.secondaryText },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 },
   dividerLine: { flex: 1, height: 1, backgroundColor: TravelColors.border },
   dividerText: { color: TravelColors.mutedText, fontSize: 13, fontWeight: '600' },
