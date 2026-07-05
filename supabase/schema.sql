@@ -161,3 +161,64 @@ CREATE POLICY "trip_photos_update"
 CREATE POLICY "trip_photos_delete"
   ON storage.objects FOR DELETE TO authenticated
   USING (bucket_id = 'trip-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ─── Collaborative trip planning (groundwork) ─────────────────────────────────
+-- Applied to the live project as migrations add_trip_collaborators +
+-- restrict_collab_helper_functions. No app behavior changes until the invite
+-- UI writes rows here.
+
+CREATE TABLE trip_collaborators (
+  trip_id     UUID REFERENCES published_trips(id) ON DELETE CASCADE NOT NULL,
+  user_id     UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  role        TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('editor', 'viewer')),
+  invited_by  UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (trip_id, user_id)
+);
+
+CREATE INDEX trip_collaborators_user_id_idx ON trip_collaborators(user_id);
+
+-- SECURITY DEFINER helpers so policies on trip_collaborators and
+-- published_trips can reference each other without RLS recursion.
+CREATE OR REPLACE FUNCTION is_trip_owner(p_trip_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM published_trips WHERE id = p_trip_id AND user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION is_trip_editor(p_trip_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM trip_collaborators
+    WHERE trip_id = p_trip_id AND user_id = auth.uid() AND role = 'editor'
+  );
+$$;
+
+-- RLS policies evaluate these with the caller's privileges, so authenticated
+-- keeps EXECUTE; anon has no business calling them via RPC.
+REVOKE EXECUTE ON FUNCTION is_trip_owner(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION is_trip_editor(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION is_trip_owner(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION is_trip_editor(UUID) TO authenticated;
+
+ALTER TABLE trip_collaborators ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "collaborators_select" ON trip_collaborators
+  FOR SELECT USING (user_id = auth.uid() OR is_trip_owner(trip_id));
+
+CREATE POLICY "collaborators_insert" ON trip_collaborators
+  FOR INSERT WITH CHECK (is_trip_owner(trip_id) AND invited_by = auth.uid());
+
+CREATE POLICY "collaborators_update" ON trip_collaborators
+  FOR UPDATE USING (is_trip_owner(trip_id));
+
+CREATE POLICY "collaborators_delete" ON trip_collaborators
+  FOR DELETE USING (user_id = auth.uid() OR is_trip_owner(trip_id));
+
+CREATE POLICY "published_trips_collaborator_update" ON published_trips
+  FOR UPDATE USING (is_trip_editor(id));
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON trip_collaborators TO authenticated;
