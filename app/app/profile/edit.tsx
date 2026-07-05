@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TravelColors } from '@/constants/theme';
 import { ProfileSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
+import { deleteAccount } from '@/features/auth/delete-account';
 import { uploadAvatar, uploadBanner } from '@/features/social/trip-photo-upload';
 import { UserAvatar } from '@/features/social/components/user-avatar';
 import { BannerCropModal } from '@/features/social/components/banner-crop-modal';
@@ -39,6 +40,45 @@ export default function EditProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Two explicit confirmations before an irreversible server-side delete.
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently removes your profile, published trips, photos, comments, and likes. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert('Are you absolutely sure?', 'Your account will be deleted immediately.', [
+              { text: 'Keep my account', style: 'cancel' },
+              {
+                text: 'Delete forever',
+                style: 'destructive',
+                onPress: () =>
+                  void (async () => {
+                    try {
+                      setDeleting(true);
+                      await deleteAccount();
+                      router.replace('/(auth)/sign-in');
+                    } catch (err) {
+                      Alert.alert(
+                        'Could not delete account',
+                        err instanceof Error ? err.message : 'Please try again.',
+                      );
+                    } finally {
+                      setDeleting(false);
+                    }
+                  })(),
+              },
+            ]),
+        },
+      ],
+    );
+  };
 
   if (!profile || !user) {
     return (
@@ -260,6 +300,25 @@ export default function EditProfileScreen() {
           <Pressable style={styles.cancelButton} onPress={() => router.back()} disabled={saving}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </Pressable>
+
+          <View style={styles.dangerZone}>
+            <Text style={styles.dangerTitle}>Danger zone</Text>
+            <Text style={styles.dangerBody}>
+              Deleting your account removes your profile, published trips, photos, comments, and
+              likes from our servers. Trips saved only on this device are not affected. This cannot
+              be undone.
+            </Text>
+            <Pressable
+              style={[styles.dangerButton, deleting && styles.buttonDisabled]}
+              onPress={handleDeleteAccount}
+              disabled={deleting || saving}>
+              {deleting ? (
+                <ActivityIndicator color={TravelColors.danger} size="small" />
+              ) : (
+                <Text style={styles.dangerButtonText}>Delete account</Text>
+              )}
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -352,4 +411,26 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
   cancelButton: { alignItems: 'center', paddingVertical: 8 },
   cancelButtonText: { color: TravelColors.mutedText, fontSize: 14, fontWeight: '600' },
+  dangerZone: {
+    marginTop: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#eccfcf',
+    backgroundColor: '#fdf6f6',
+    padding: 18,
+    gap: 8,
+  },
+  dangerTitle: { color: TravelColors.danger, fontSize: 15, fontWeight: '800' },
+  dangerBody: { color: TravelColors.secondaryText, fontSize: 13, lineHeight: 19 },
+  dangerButton: {
+    marginTop: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: TravelColors.danger,
+    paddingVertical: 12,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  dangerButtonText: { color: TravelColors.danger, fontSize: 15, fontWeight: '700' },
 });
