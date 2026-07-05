@@ -9,8 +9,10 @@ section. This is a backlog, not a commitment of order.
 - Let users plan trips **together with friends** on the app.
 - Shared/editable itineraries: invite collaborators to a trip, co-edit stops,
   legs, dates, and notes.
-- Likely needs: a trip-collaborators table (trip_id, user_id, role), realtime
-  sync (Supabase Realtime), conflict handling, and an invite flow.
+- ✅ **DB groundwork shipped:** `trip_collaborators` table + RLS (owner
+  invites/manages, editors may update the trip, members can leave) is live and
+  mirrored in `schema.sql`. Remaining: invite UI, co-edit screens, realtime
+  sync (Supabase Realtime), conflict handling.
 
 ### Travel booking / ticket aggregation
 - Show the most recent **plane, hotel, ferry, and bus tickets** for a planned
@@ -28,6 +30,20 @@ section. This is a backlog, not a commitment of order.
   protection below.
 - ✅ **Branded auth emails (templates):** ready to paste from
   `supabase/email-templates.md`. Custom from-address still needs SMTP + domain.
+- ✅ **Password policy:** min 8 chars, letter + number, common-password
+  blocklist, live strength meter on sign-up and reset
+  (`features/auth/password-policy.ts`). Pair with the server-side
+  leaked-password toggle below.
+- ✅ **Forgot / reset password:** in-app flow with recovery deep link
+  (`(auth)/forgot-password` + `reset-password`). Requires the redirect URL to
+  be allow-listed in Supabase → Auth → URL Configuration.
+- ✅ **Two-factor authentication (TOTP):** enroll/disable in Profile →
+  Security; sign-in is gated by an `mfa-challenge` screen when a verified
+  factor exists. Follow-up: enforce AAL2 in RLS policies so the API (not just
+  the app) requires the second factor.
+- ✅ **In-app account deletion (Apple requirement):** Profile → Edit → danger
+  zone; `delete-account` edge function removes storage + auth user, DB rows
+  cascade.
 - **Bot/abuse protection (CAPTCHA):** Cloudflare Turnstile on sign-up and
   sign-in. Requires a Turnstile site in the Cloudflare dashboard (site key +
   secret), the secret added to Supabase Auth → Attack Protection, and a
@@ -66,10 +82,20 @@ section. This is a backlog, not a commitment of order.
 - Manual photo crop refinements, more story templates, shape clips, route-only
   card (see earlier photo-story roadmap notes).
 
+## UX polish
+
+- ✅ **Skeleton loading screens:** layout-mirroring skeletons
+  (`app/components/skeleton.tsx`) replace full-screen spinners on feed,
+  trips, search, profiles, and trip detail screens.
+
 ## Store / launch readiness
 
-- `eas.json` + EAS Build config for production builds.
-- App Store / Play Store metadata: description, screenshots, privacy policy.
+- ✅ `eas.json` + EAS Build config for production builds.
+- ✅ Privacy policy + terms of service **drafts** in `docs/legal/` — still
+  need lawyer review and public hosting, then link from store listings.
+- App Store / Play Store metadata: description, screenshots.
 - A development build (not Expo Go) for Apple/Google social login and Turnstile
   WebView testing.
-- Decide on the final app name and secure domain + handles.
+- Decide on the final app name and secure domain + handles. Leading candidate
+  **Sharevel**: stores are clear (checked Jul 2026); `sharevel.com` is
+  registered but dormant; do the formal USPTO/EUIPO check.
