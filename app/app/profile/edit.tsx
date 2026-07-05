@@ -1,4 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
@@ -301,6 +302,14 @@ export default function EditProfileScreen() {
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </Pressable>
 
+          <Pressable
+            style={styles.securityLink}
+            onPress={() => router.push('/profile/security' as Href)}>
+            <Ionicons name="shield-checkmark-outline" size={18} color={TravelColors.primary} />
+            <Text style={styles.securityLinkText}>Security & two-factor authentication</Text>
+            <Ionicons name="chevron-forward" size={16} color={TravelColors.mutedText} />
+          </Pressable>
+
           <View style={styles.dangerZone}>
             <Text style={styles.dangerTitle}>Danger zone</Text>
             <Text style={styles.dangerBody}>
@@ -411,6 +420,18 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
   cancelButton: { alignItems: 'center', paddingVertical: 8 },
   cancelButtonText: { color: TravelColors.mutedText, fontSize: 14, fontWeight: '600' },
+  securityLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: TravelColors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  securityLinkText: { flex: 1, color: TravelColors.text, fontSize: 15, fontWeight: '600' },
   dangerZone: {
     marginTop: 12,
     borderRadius: 20,

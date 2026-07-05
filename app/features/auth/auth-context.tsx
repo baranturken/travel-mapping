@@ -8,6 +8,7 @@ import {
   getLockRemainingMs,
   recordFailedAttempt,
 } from '@/features/auth/login-throttle';
+import { getMfaStatus } from '@/features/auth/mfa';
 
 export type { Profile } from '@/features/social/types';
 
@@ -17,6 +18,10 @@ type AuthContextValue = {
   profile: Profile | null;
   loading: boolean;
   needsProfileSetup: boolean;
+  // Session is AAL1 but the account has a verified TOTP factor — the user
+  // must pass the 2FA challenge before using the app.
+  mfaPending: boolean;
+  refreshMfaPending(): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
@@ -49,7 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mfaPending, setMfaPending] = useState(false);
   const mountedRef = useRef(true);
+
+  const refreshMfaPending = useCallback(async () => {
+    try {
+      const status = await getMfaStatus();
+      if (mountedRef.current) setMfaPending(status.verificationNeeded);
+    } catch {
+      // Fail open only for reads; the challenge screen re-checks on verify.
+      if (mountedRef.current) setMfaPending(false);
+    }
+  }, []);
 
   const loadProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data } = await supabase
@@ -69,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mountedRef.current) return;
       setSession(initial);
       if (initial?.user) {
+        void refreshMfaPending();
         void loadProfile(initial.user.id).finally(() => {
           if (mountedRef.current) setLoading(false);
         });
@@ -81,8 +98,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mountedRef.current) return;
       setSession(next);
       if (next?.user) {
+        void refreshMfaPending();
         void loadProfile(next.user.id);
       } else {
+        setMfaPending(false);
         setProfile(null);
       }
     });
@@ -91,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mountedRef.current = false;
       subscription.unsubscribe();
     };
-  }, [loadProfile]);
+  }, [loadProfile, refreshMfaPending]);
 
   const signIn = async (email: string, password: string) => {
     const locked = await getLockRemainingMs(email);
@@ -152,6 +171,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         loading,
         needsProfileSetup,
+        mfaPending,
+        refreshMfaPending,
         signIn,
         signUp,
         signOut,

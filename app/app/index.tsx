@@ -6,7 +6,7 @@ import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 
 export default function IndexRedirect() {
-  const { session, loading, profile } = useAuth();
+  const { session, loading, profile, mfaPending } = useAuth();
 
   if (loading) {
     return (
@@ -18,6 +18,10 @@ export default function IndexRedirect() {
 
   if (!session) {
     return <Redirect href={'/(auth)/sign-in' as Href} />;
+  }
+
+  if (mfaPending) {
+    return <Redirect href={'/mfa-challenge' as Href} />;
   }
 
   if (!profile) {

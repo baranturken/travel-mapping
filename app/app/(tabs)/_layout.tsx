@@ -6,10 +6,14 @@ import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 
 export default function TabsLayout() {
-  const { session, loading } = useAuth();
+  const { session, loading, mfaPending } = useAuth();
 
   if (!loading && !session) {
     return <Redirect href={'/(auth)/sign-in' as Href} />;
+  }
+
+  if (!loading && mfaPending) {
+    return <Redirect href={'/mfa-challenge' as Href} />;
   }
 
   return (
