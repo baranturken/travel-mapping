@@ -18,8 +18,8 @@ function mapProfile(row: Record<string, unknown>): Profile {
 
 function mapFeedTrip(row: Record<string, unknown>, userId: string | null, likedIds: Set<string>): FeedTrip {
   const profileRaw = row.profile as Record<string, unknown>;
-  const likeCount = (row.like_count as Array<unknown> | null)?.[0] ?? { count: 0 };
-  const commentCount = (row.comment_count as Array<unknown> | null)?.[0] ?? { count: 0 };
+  const likeCount = (row.like_count as unknown[] | null)?.[0] ?? { count: 0 };
+  const commentCount = (row.comment_count as unknown[] | null)?.[0] ?? { count: 0 };
   return {
     id: row.id as string,
     localId: row.local_id as string,
@@ -41,7 +41,7 @@ function mapFeedTrip(row: Record<string, unknown>, userId: string | null, likedI
   };
 }
 
-async function hydrateLikes(trips: Array<Record<string, unknown>>, userId: string | null): Promise<Set<string>> {
+async function hydrateLikes(trips: Record<string, unknown>[], userId: string | null): Promise<Set<string>> {
   if (!userId || trips.length === 0) return new Set();
   const ids = trips.map((t) => t.id as string);
   const { data } = await supabase
@@ -79,7 +79,7 @@ export async function getFeed(userId: string, offset = 0): Promise<FeedTrip[]> {
     .range(offset, offset + 19);
 
   if (error) throw error;
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const rows = (data ?? []) as Record<string, unknown>[];
   const liked = await hydrateLikes(rows, userId);
   return rows.map((r) => mapFeedTrip(r, userId, liked));
 }
@@ -94,7 +94,7 @@ export async function getRecommendations(userId: string, offset = 0): Promise<Fe
     .range(offset, offset + 19);
 
   if (error) throw error;
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const rows = (data ?? []) as Record<string, unknown>[];
   const liked = await hydrateLikes(rows, userId);
   return rows.map((r) => mapFeedTrip(r, userId, liked));
 }
@@ -125,7 +125,7 @@ export async function getUserTrips(userId: string, viewerId: string | null): Pro
 
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const rows = (data ?? []) as Record<string, unknown>[];
   const liked = await hydrateLikes(rows, viewerId);
   return rows.map((r) => mapFeedTrip(r, viewerId, liked));
 }

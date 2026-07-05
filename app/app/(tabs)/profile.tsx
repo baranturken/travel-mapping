@@ -3,7 +3,6 @@ import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Pressable,
@@ -15,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { ProfileSkeleton, TripListSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import { getUserTrips, getFollowCounts } from '@/features/social/social-repository';
 import { summarizeStops } from '@/features/social/trip-summary-stats';
@@ -73,9 +73,7 @@ export default function ProfileScreen() {
   if (!profile) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-        </View>
+        <ProfileSkeleton />
       </SafeAreaView>
     );
   }
@@ -179,9 +177,7 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>Published trips</Text>
 
         {loading ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator color={TravelColors.primary} />
-          </View>
+          <TripListSkeleton count={2} />
         ) : trips.length === 0 ? (
           <View style={styles.emptyTrips}>
             <View style={styles.emptyIconWrap}>

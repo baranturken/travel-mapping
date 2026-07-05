@@ -2,7 +2,7 @@
 // before importing the module under test.
 process.env.EXPO_PUBLIC_GEOAPIFY_KEY = 'test-key';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const { buildStaticRouteMapUrl } = require('@/features/trips/geoapify-map') as typeof import('@/features/trips/geoapify-map');
 
 const stop = (latitude: number, longitude: number) => ({ latitude, longitude });

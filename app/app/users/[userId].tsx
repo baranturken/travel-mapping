@@ -2,7 +2,6 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Pressable,
@@ -14,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { ProfileSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import {
   followUser,
@@ -88,9 +88,7 @@ export default function UserProfileScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-        </View>
+        <ProfileSkeleton />
       </SafeAreaView>
     );
   }

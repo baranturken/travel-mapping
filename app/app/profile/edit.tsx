@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { ProfileSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import { uploadAvatar, uploadBanner } from '@/features/social/trip-photo-upload';
 import { UserAvatar } from '@/features/social/components/user-avatar';
@@ -42,9 +43,7 @@ export default function EditProfileScreen() {
   if (!profile || !user) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.centered}>
-          <ActivityIndicator color={TravelColors.primary} />
-        </View>
+        <ProfileSkeleton />
       </SafeAreaView>
     );
   }

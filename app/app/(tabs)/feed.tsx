@@ -1,5 +1,4 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import {

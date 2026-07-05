@@ -41,11 +41,11 @@ export async function fetchOsrmRoute(
     if (!response.ok) return null;
 
     const data = (await response.json()) as {
-      routes?: Array<{
+      routes?: {
         geometry?: { coordinates?: [number, number][] };
         distance?: number;
         duration?: number;
-      }>;
+      }[];
     };
     const route = data?.routes?.[0];
     const coords = route?.geometry?.coordinates;

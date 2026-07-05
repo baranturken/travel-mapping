@@ -1,9 +1,7 @@
 import { useRouter } from 'expo-router';
-import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -14,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { SearchListSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import { searchProfiles, followUser, unfollowUser, getIsFollowing } from '@/features/social/social-repository';
 import { UserAvatar } from '@/features/social/components/user-avatar';
@@ -104,9 +103,7 @@ export default function SearchScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-        </View>
+        <SearchListSkeleton />
       ) : (
         <FlatList
           data={results}

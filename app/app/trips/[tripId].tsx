@@ -4,7 +4,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -19,6 +18,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { WebView } from 'react-native-webview';
 
 import { TravelColors } from '@/constants/theme';
+import { TripDetailSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
 import { buildStaticRouteMapUrl } from '@/features/trips/geoapify-map';
@@ -411,10 +411,7 @@ export default function TripDetailScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-          <Text style={styles.loadingText}>Loading trip…</Text>
-        </View>
+        <TripDetailSkeleton />
       </SafeAreaView>
     );
   }
@@ -875,10 +872,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     gap: 10,
-  },
-  loadingText: {
-    color: TravelColors.mutedText,
-    fontSize: 14,
   },
   emptyTitle: {
     color: TravelColors.text,

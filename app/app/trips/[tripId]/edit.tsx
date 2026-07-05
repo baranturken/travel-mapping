@@ -1,10 +1,11 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { TravelColors } from '@/constants/theme';
+import { TripDetailSkeleton } from '@/components/skeleton';
 import { TripForm } from '@/features/trips/components/trip-form';
 import { toTripFormValues } from '@/features/trips/mappers';
 import { createSQLiteTripRepository } from '@/features/trips/sqlite-trip-repository';
@@ -91,10 +92,7 @@ export default function EditTripScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.stateWrap}>
-          <ActivityIndicator color={TravelColors.primary} />
-          <Text style={styles.stateBody}>Loading trip…</Text>
-        </View>
+        <TripDetailSkeleton />
       </SafeAreaView>
     );
   }

@@ -2,7 +2,6 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { TripDetailSkeleton } from '@/components/skeleton';
 import { useAuth } from '@/features/auth/auth-context';
 import { formatTripDateRange } from '@/features/trips/mappers';
 import { getTransportDisplay, type TransportType } from '@/features/trips/types';
@@ -74,9 +74,7 @@ export default function SharedTripScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         <Stack.Screen options={{ title: 'Trip' }} />
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-        </View>
+        <TripDetailSkeleton />
       </SafeAreaView>
     );
   }

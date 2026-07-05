@@ -106,6 +106,65 @@ export function TripListSkeleton({ count = 3 }: { count?: number }) {
   );
 }
 
+// Mirrors a user search result row: avatar, display name, username.
+export function SearchListSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <View style={styles.list}>
+      {Array.from({ length: count }, (_, i) => (
+        <View key={i} style={styles.searchRow}>
+          <Skeleton width={46} height={46} radius={23} />
+          <View style={styles.authorText}>
+            <Skeleton width="40%" height={15} />
+            <Skeleton width="25%" height={12} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// Mirrors a profile page: banner, avatar, name block, stats row, trip cards.
+export function ProfileSkeleton() {
+  return (
+    <View>
+      <Skeleton height={120} radius={0} />
+      <View style={styles.profileBody}>
+        <Skeleton width={84} height={84} radius={42} style={styles.profileAvatar} />
+        <Skeleton width="45%" height={20} />
+        <Skeleton width="30%" height={14} />
+        <View style={styles.profileStats}>
+          <Skeleton width={70} height={34} radius={10} />
+          <Skeleton width={70} height={34} radius={10} />
+          <Skeleton width={70} height={34} radius={10} />
+        </View>
+        <TripListSkeleton count={2} />
+      </View>
+    </View>
+  );
+}
+
+// Mirrors a trip detail page: title block, map, stop rows.
+export function TripDetailSkeleton() {
+  return (
+    <View style={styles.detailBody}>
+      <Skeleton width="65%" height={26} />
+      <Skeleton width="40%" height={14} />
+      <Skeleton height={220} radius={20} />
+      <View style={styles.tripList}>
+        {Array.from({ length: 3 }, (_, i) => (
+          <View key={i} style={styles.stopRow}>
+            <Skeleton width={34} height={34} radius={17} />
+            <View style={styles.authorText}>
+              <Skeleton width="50%" height={15} />
+              <Skeleton width="35%" height={12} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   block: { backgroundColor: TravelColors.border },
   list: { padding: 16, gap: 14 },
@@ -133,4 +192,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: TravelColors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: TravelColors.border,
+    padding: 12,
+  },
+  profileBody: { padding: 20, gap: 12 },
+  profileAvatar: { marginTop: -52, borderWidth: 4, borderColor: TravelColors.background },
+  profileStats: { flexDirection: 'row', gap: 12, marginVertical: 8 },
+  detailBody: { padding: 20, gap: 12 },
+  stopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });
