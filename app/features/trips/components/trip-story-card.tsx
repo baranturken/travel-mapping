@@ -19,7 +19,7 @@ export function TripStoryCard({ trip, legRoutes, style }: TripStoryCardProps) {
 
   return (
     <View style={[styles.card, style]}>
-      <Text style={styles.brand}>✈ Travel Mapping</Text>
+      <Text style={styles.brand}>✈ Sharevel</Text>
 
       <Text style={styles.title} numberOfLines={2} ellipsizeMode="tail">
         {trip.title}
@@ -90,7 +90,7 @@ export function TripStoryCard({ trip, legRoutes, style }: TripStoryCardProps) {
 
       </View>
 
-      <Text style={styles.watermark}>Created with Travel Mapping</Text>
+      <Text style={styles.watermark}>Created with Sharevel</Text>
     </View>
   );
 }

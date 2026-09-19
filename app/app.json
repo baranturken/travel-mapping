@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Travel Mapping",
+    "name": "Sharevel",
     "slug": "travel-mapping",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -49,7 +49,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Travel Mapping to add photo memories to your trips and read embedded photo location metadata when it is available.",
+          "photosPermission": "Allow Sharevel to add photo memories to your trips and read embedded photo location metadata when it is available.",
           "cameraPermission": false,
           "microphonePermission": false
         }

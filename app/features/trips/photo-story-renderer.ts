@@ -408,7 +408,7 @@ window.runStoryCanvas = async function() {
     ctx.font = 'bold 28px sans-serif';
     ctx.fillStyle = 'rgba(127,180,240,0.85)';
     ctx.letterSpacing = '3px';
-    ctx.fillText('✈  TRAVEL MAPPING', PAD, y);
+    ctx.fillText('✈  SHAREVEL', PAD, y);
     ctx.letterSpacing = '0px';
     y += 20;
 
@@ -483,7 +483,7 @@ window.runStoryCanvas = async function() {
     ctx.font = '24px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.22)';
     ctx.textAlign = 'right';
-    ctx.fillText('Made with Travel Mapping', W - PAD, H - 72);
+    ctx.fillText('Made with Sharevel', W - PAD, H - 72);
     ctx.textAlign = 'left';
 
     // Route minimap drawn LAST so it always renders on top.
@@ -578,7 +578,7 @@ window.runStoryCanvas = async function() {
     ctx.font = 'bold 26px sans-serif';
     ctx.fillStyle = 'rgba(116,192,252,0.85)';
     ctx.letterSpacing = '4px';
-    ctx.fillText('✈  TRAVEL MAPPING', PAD, y);
+    ctx.fillText('✈  SHAREVEL', PAD, y);
     ctx.letterSpacing = '0px';
     y += 52;
 
@@ -737,7 +737,7 @@ window.runStoryCanvas = async function() {
     ctx.font = '22px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.22)';
     ctx.textAlign = 'right';
-    ctx.fillText('Made with Travel Mapping', W - PAD, H - 58);
+    ctx.fillText('Made with Sharevel', W - PAD, H - 58);
     ctx.textAlign = 'left';
   }
 
@@ -812,7 +812,7 @@ window.runStoryCanvas = async function() {
     ctx.font = 'bold 26px sans-serif';
     ctx.fillStyle = 'rgba(116,192,252,0.8)';
     ctx.letterSpacing = '4px';
-    ctx.fillText('✈  TRAVEL MAPPING', L, y);
+    ctx.fillText('✈  SHAREVEL', L, y);
     ctx.letterSpacing = '0px';
     y += 52;
 
@@ -905,7 +905,7 @@ window.runStoryCanvas = async function() {
     ctx.font = '22px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
     ctx.textAlign = 'right';
-    ctx.fillText('Made with Travel Mapping', W - 28, H - 58);
+    ctx.fillText('Made with Sharevel', W - 28, H - 58);
     ctx.textAlign = 'left';
   }
 
@@ -1044,7 +1044,7 @@ window.runStoryCanvas = async function() {
     ctx.font = '24px sans-serif';
     ctx.fillStyle = 'rgba(29,41,53,0.32)';
     ctx.textAlign = 'center';
-    ctx.fillText('Made with Travel Mapping', W / 2, H - 64);
+    ctx.fillText('Made with Sharevel', W / 2, H - 64);
     ctx.textAlign = 'left';
   }
 
@@ -1098,7 +1098,7 @@ window.runStoryCanvas = async function() {
     ctx.font = 'bold 26px sans-serif';
     ctx.fillStyle = 'rgba(255,225,190,0.85)';
     ctx.letterSpacing = '4px';
-    ctx.fillText('✈  TRAVEL MAPPING', PAD, y);
+    ctx.fillText('✈  SHAREVEL', PAD, y);
     ctx.letterSpacing = '0px';
     y += 24;
 
@@ -1203,7 +1203,7 @@ window.runStoryCanvas = async function() {
     ctx.font = '22px sans-serif';
     ctx.fillStyle = 'rgba(255,246,236,0.35)';
     ctx.textAlign = 'right';
-    ctx.fillText('Made with Travel Mapping', W - PAD, H - 56);
+    ctx.fillText('Made with Sharevel', W - PAD, H - 56);
     ctx.textAlign = 'left';
   }
 
@@ -1238,7 +1238,7 @@ window.runStoryCanvas = async function() {
 
     ctx.font = 'bold 30px ' + MONO;
     ctx.fillStyle = ACCENT;
-    ctx.fillText('★ TRAVEL MAPPING — BOARDING PASS', L2, y);
+    ctx.fillText('★ SHAREVEL — BOARDING PASS', L2, y);
     y += 64;
 
     ctx.font = 'bold 76px ' + MONO;
@@ -1380,7 +1380,7 @@ window.runStoryCanvas = async function() {
       }
       ctx.font = '20px ' + MONO;
       ctx.fillStyle = 'rgba(34,50,74,0.5)';
-      ctx.fillText('MADE WITH TRAVEL MAPPING', L2, by + bh + 30);
+      ctx.fillText('MADE WITH SHAREVEL', L2, by + bh + 30);
     }
   }
 

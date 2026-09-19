@@ -69,7 +69,7 @@ export default function MfaChallengeScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.brandRow}>
             <Ionicons name="map" size={28} color={TravelColors.primary} />
-            <Text style={styles.brand}>Travel Mapping</Text>
+            <Text style={styles.brand}>Sharevel</Text>
           </View>
 
           <View style={styles.card}>

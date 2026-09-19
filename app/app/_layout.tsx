@@ -40,7 +40,7 @@ class AppShellErrorBoundary extends React.Component<
         <View style={styles.errorScreen}>
           <View style={styles.errorCard}>
             <Text style={styles.errorEyebrow}>Storage error</Text>
-            <Text style={styles.errorTitle}>Travel Mapping could not open local trip storage.</Text>
+            <Text style={styles.errorTitle}>Sharevel could not open local trip storage.</Text>
             <Text style={styles.errorBody}>
               Restart the app and try again. Your device may have blocked the SQLite database from
               opening.
