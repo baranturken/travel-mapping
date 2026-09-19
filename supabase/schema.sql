@@ -90,35 +90,33 @@ ALTER TABLE trip_comments   ENABLE ROW LEVEL SECURITY;
 
 -- profiles
 CREATE POLICY "profiles_select_all"  ON profiles FOR SELECT USING (true);
-CREATE POLICY "profiles_insert_own"  ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
-CREATE POLICY "profiles_update_own"  ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "profiles_insert_own"  ON profiles FOR INSERT WITH CHECK ((SELECT auth.uid()) = id);
+CREATE POLICY "profiles_update_own"  ON profiles FOR UPDATE USING ((SELECT auth.uid()) = id);
 
 -- published_trips
 CREATE POLICY "trips_select" ON published_trips FOR SELECT
-  USING (is_public = true OR auth.uid() = user_id);
+  USING (is_public = true OR (SELECT auth.uid()) = user_id);
 CREATE POLICY "trips_insert_own" ON published_trips FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "trips_update_own" ON published_trips FOR UPDATE
-  USING (auth.uid() = user_id);
+  WITH CHECK ((SELECT auth.uid()) = user_id);
 CREATE POLICY "trips_delete_own" ON published_trips FOR DELETE
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 -- follows
 CREATE POLICY "follows_select_all"  ON follows FOR SELECT USING (true);
-CREATE POLICY "follows_insert_own"  ON follows FOR INSERT WITH CHECK (auth.uid() = follower_id);
-CREATE POLICY "follows_delete_own"  ON follows FOR DELETE USING (auth.uid() = follower_id);
+CREATE POLICY "follows_insert_own"  ON follows FOR INSERT WITH CHECK ((SELECT auth.uid()) = follower_id);
+CREATE POLICY "follows_delete_own"  ON follows FOR DELETE USING ((SELECT auth.uid()) = follower_id);
 
 -- trip_likes
 CREATE POLICY "likes_select_all"   ON trip_likes FOR SELECT USING (true);
 CREATE POLICY "likes_insert_auth"  ON trip_likes FOR INSERT
-  WITH CHECK (auth.uid() = user_id AND auth.uid() IS NOT NULL);
-CREATE POLICY "likes_delete_own"   ON trip_likes FOR DELETE USING (auth.uid() = user_id);
+  WITH CHECK ((SELECT auth.uid()) = user_id AND (SELECT auth.uid()) IS NOT NULL);
+CREATE POLICY "likes_delete_own"   ON trip_likes FOR DELETE USING ((SELECT auth.uid()) = user_id);
 
 -- trip_comments
 CREATE POLICY "comments_select_all"  ON trip_comments FOR SELECT USING (true);
 CREATE POLICY "comments_insert_auth" ON trip_comments FOR INSERT
-  WITH CHECK (auth.uid() = user_id AND auth.uid() IS NOT NULL);
-CREATE POLICY "comments_delete_own"  ON trip_comments FOR DELETE USING (auth.uid() = user_id);
+  WITH CHECK ((SELECT auth.uid()) = user_id AND (SELECT auth.uid()) IS NOT NULL);
+CREATE POLICY "comments_delete_own"  ON trip_comments FOR DELETE USING ((SELECT auth.uid()) = user_id);
 
 -- ─── Grants ───────────────────────────────────────────────────────────────────
 -- Required when the project does not auto-expose new tables to the Data API.
@@ -176,11 +174,19 @@ CREATE TABLE trip_collaborators (
   PRIMARY KEY (trip_id, user_id)
 );
 
-CREATE INDEX trip_collaborators_user_id_idx ON trip_collaborators(user_id);
+CREATE INDEX trip_collaborators_user_id_idx    ON trip_collaborators(user_id);
+CREATE INDEX trip_collaborators_invited_by_idx ON trip_collaborators(invited_by);
 
 -- SECURITY DEFINER helpers so policies on trip_collaborators and
 -- published_trips can reference each other without RLS recursion.
-CREATE OR REPLACE FUNCTION is_trip_owner(p_trip_id UUID)
+--
+-- They live in a `private` schema, not `public`: PostgREST only exposes its
+-- configured schemas, so this keeps them callable from RLS policies while
+-- removing them from /rest/v1/rpc/, where any signed-in user could invoke them.
+CREATE SCHEMA IF NOT EXISTS private;
+GRANT USAGE ON SCHEMA private TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION private.is_trip_owner(p_trip_id UUID)
 RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
 AS $$
   SELECT EXISTS (
@@ -188,7 +194,7 @@ AS $$
   );
 $$;
 
-CREATE OR REPLACE FUNCTION is_trip_editor(p_trip_id UUID)
+CREATE OR REPLACE FUNCTION private.is_trip_editor(p_trip_id UUID)
 RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
 AS $$
   SELECT EXISTS (
@@ -199,26 +205,30 @@ $$;
 
 -- RLS policies evaluate these with the caller's privileges, so authenticated
 -- keeps EXECUTE; anon has no business calling them via RPC.
-REVOKE EXECUTE ON FUNCTION is_trip_owner(UUID) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION is_trip_editor(UUID) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION is_trip_owner(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION is_trip_editor(UUID) TO authenticated;
+REVOKE ALL ON FUNCTION private.is_trip_owner(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.is_trip_editor(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION private.is_trip_owner(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION private.is_trip_editor(UUID) TO authenticated;
 
 ALTER TABLE trip_collaborators ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "collaborators_select" ON trip_collaborators
-  FOR SELECT USING (user_id = auth.uid() OR is_trip_owner(trip_id));
+  FOR SELECT USING (user_id = (SELECT auth.uid()) OR private.is_trip_owner(trip_id));
 
 CREATE POLICY "collaborators_insert" ON trip_collaborators
-  FOR INSERT WITH CHECK (is_trip_owner(trip_id) AND invited_by = auth.uid());
+  FOR INSERT WITH CHECK (private.is_trip_owner(trip_id) AND invited_by = (SELECT auth.uid()));
 
 CREATE POLICY "collaborators_update" ON trip_collaborators
-  FOR UPDATE USING (is_trip_owner(trip_id));
+  FOR UPDATE USING (private.is_trip_owner(trip_id));
 
 CREATE POLICY "collaborators_delete" ON trip_collaborators
-  FOR DELETE USING (user_id = auth.uid() OR is_trip_owner(trip_id));
+  FOR DELETE USING (user_id = (SELECT auth.uid()) OR private.is_trip_owner(trip_id));
 
-CREATE POLICY "published_trips_collaborator_update" ON published_trips
-  FOR UPDATE USING (is_trip_editor(id));
+-- Owner and editor UPDATE rights are one policy, not two. Two permissive
+-- policies for the same role/action are both evaluated on every row.
+CREATE POLICY "trips_update_own_or_editor" ON published_trips
+  FOR UPDATE USING (
+    (SELECT auth.uid()) = user_id OR private.is_trip_editor(id)
+  );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON trip_collaborators TO authenticated;
