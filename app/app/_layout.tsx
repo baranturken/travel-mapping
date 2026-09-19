@@ -11,6 +11,51 @@ import { TurnstileProvider } from '@/features/auth/components/turnstile-provider
 import { migrateDbIfNeeded } from '@/lib/db/migrations';
 import { APP_DATABASE_NAME } from '@/lib/db/sqlite';
 
+// The back-button label is taken from the previous route's name, which for
+// anything pushed out of the tab group is the literal string "(tabs)". These
+// map a route to the label a user would recognise; the tab group resolves
+// further, to whichever tab is actually focused.
+const TAB_BACK_TITLES: Record<string, string> = {
+  feed: 'Feed',
+  trips: 'My Trips',
+  search: 'Search',
+  profile: 'Profile',
+};
+
+const ROUTE_BACK_TITLES: Record<string, string> = {
+  'trips/[tripId]': 'Trip',
+  'trips/shared/[publishedId]': 'Trip',
+  'users/[userId]': 'Profile',
+  'profile/edit': 'Edit profile',
+};
+
+type NavState = {
+  index?: number;
+  routes?: { name: string; state?: NavState }[];
+};
+
+/**
+ * Label for the back button of the screen currently being rendered: the name
+ * of the screen beneath it on the stack.
+ *
+ * Computed from navigation state rather than set with setOptions, because the
+ * root layout re-declares each Stack.Screen's static options on every render
+ * and would clobber a dynamically-set title.
+ */
+function backTitleFor(state: NavState | undefined): string {
+  const index = state?.index ?? 0;
+  const previous = state?.routes?.[index - 1];
+  if (!previous) return 'Back';
+
+  if (previous.name === '(tabs)') {
+    const tabs = previous.state;
+    const focusedTab = tabs?.routes?.[tabs?.index ?? 0]?.name;
+    return (focusedTab && TAB_BACK_TITLES[focusedTab]) || 'Back';
+  }
+
+  return ROUTE_BACK_TITLES[previous.name] ?? 'Back';
+}
+
 const travelTheme = {
   ...DefaultTheme,
   colors: {
@@ -62,12 +107,13 @@ export default function RootLayout() {
           <AppShellErrorBoundary>
           <SQLiteProvider databaseName={APP_DATABASE_NAME} onInit={migrateDbIfNeeded}>
             <Stack
-              screenOptions={{
+              screenOptions={({ navigation }) => ({
                 contentStyle: { backgroundColor: '#f6fbff' },
                 headerStyle: { backgroundColor: '#ffffff' },
                 headerTintColor: '#15304b',
                 headerTitleStyle: { fontWeight: '700' },
-              }}>
+                headerBackTitle: backTitleFor(navigation.getState() as NavState),
+              })}>
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
