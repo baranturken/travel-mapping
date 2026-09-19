@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   },
   thumbSelected: { borderColor: TravelColors.primary },
   thumbImage: { width: '100%', height: '100%' },
-  thumbDim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.55)' },
+  thumbDim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(255,255,255,0.55)' },
   check: {
     position: 'absolute',
     top: 6,

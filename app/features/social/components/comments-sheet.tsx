@@ -164,11 +164,11 @@ export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(10, 20, 40, 0.4)',
   },
   sheetWrapper: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'flex-end',
   },
   sheet: {
