@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useSQLiteContext } from 'expo-sqlite';
 
+import { MapExpandButton, MapFullscreenModal } from '@/components/map-fullscreen-modal';
 import { TravelColors } from '@/constants/theme';
 import { buildLeafletHtml } from '@/features/trips/map/build-leaflet-html';
 import {
@@ -118,6 +119,7 @@ export function TripMapWebView({ trip, onRoutesLoaded }: TripMapWebViewProps) {
   const [hasLoadError, setHasLoadError] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
   const [showNetworkHint, setShowNetworkHint] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const showFallbackState = hasLoadError;
   const showSlowLoadNotice = showNetworkHint && !isMapReady && !hasLoadError;
 
@@ -160,8 +162,16 @@ export function TripMapWebView({ trip, onRoutesLoaded }: TripMapWebViewProps) {
               }
             }}
           />
+          <MapExpandButton onPress={() => setIsFullscreen(true)} />
         </View>
       )}
+
+      <MapFullscreenModal
+        visible={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+        html={html}
+        title={trip.title}
+      />
 
       {(showFallbackState || showSlowLoadNotice || isRoutingLoading) ? (
         <View style={styles.noticeCard}>
