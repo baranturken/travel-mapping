@@ -58,7 +58,7 @@ export default function TripsScreen() {
           />
         }>
         <View style={styles.heroCard}>
-          <Text style={styles.eyebrow}>Travel Mapping</Text>
+          <Text style={styles.eyebrow}>Sharevel</Text>
           <Text style={styles.title}>Build a clean trip story you can read on a map.</Text>
           <Text style={styles.description}>
             Save multi-stop journeys, keep transport legs in order, and see each trip as a

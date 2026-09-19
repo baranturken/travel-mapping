@@ -246,7 +246,7 @@ export default function TripStoryScreen() {
       (dateRange ? `📅 ${dateRange}\n` : '') +
       `${statsLine}\n\n` +
       `Route:\n${routeLines}\n\n` +
-      `Made with Travel Mapping`;
+      `Made with Sharevel`;
 
     try {
       await Share.share({ message });

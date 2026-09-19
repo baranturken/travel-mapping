@@ -182,7 +182,7 @@ export function StopMemoriesEditor({
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Photo memories</Text>
           <Text style={styles.body}>
-            Pick one or many photos from your device. Travel Mapping can read embedded photo location metadata so the trip can note where a memory was captured.
+            Pick one or many photos from your device. Sharevel can read embedded photo location metadata so the trip can note where a memory was captured.
           </Text>
         </View>
         <View style={styles.headerActions}>
