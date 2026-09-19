@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
+import { MapExpandButton, MapFullscreenModal } from '@/components/map-fullscreen-modal';
 import { TravelColors } from '@/constants/theme';
 import type { StopSummary } from '@/features/social/types';
 
@@ -84,8 +85,9 @@ function buildSharedTripMapHtml(stops: StopSummary[]): string {
 </html>`;
 }
 
-export function SharedTripMap({ stops }: { stops: StopSummary[] }) {
+export function SharedTripMap({ stops, title }: { stops: StopSummary[]; title?: string }) {
   const html = useMemo(() => buildSharedTripMapHtml(stops), [stops]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -95,6 +97,14 @@ export function SharedTripMap({ stops }: { stops: StopSummary[] }) {
         javaScriptEnabled
         originWhitelist={['*']}
         scrollEnabled={false}
+      />
+      <MapExpandButton onPress={() => setIsFullscreen(true)} />
+
+      <MapFullscreenModal
+        visible={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+        html={html}
+        title={title}
       />
     </View>
   );
