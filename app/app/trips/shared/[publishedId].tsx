@@ -24,6 +24,7 @@ import { SharedTripMap } from '@/features/social/components/shared-trip-map';
 import { UserAvatar } from '@/features/social/components/user-avatar';
 import { ReportSheet } from '@/features/social/components/report-sheet';
 import type { FeedTrip } from '@/features/social/types';
+import { cacheKey, readCache, writeCache } from '@/features/social/social-cache';
 
 export default function SharedTripScreen() {
   const router = useRouter();
@@ -33,30 +34,38 @@ export default function SharedTripScreen() {
   // Two-column grid: screen minus 16px page padding each side and an 8px gutter.
   const galleryImageSize = Math.floor((windowWidth - 32 - 8) / 2);
   const [reportOpen, setReportOpen] = useState(false);
-  const [trip, setTrip] = useState<FeedTrip | null>(null);
-  const [loading, setLoading] = useState(true);
+  const tripKey = cacheKey('publishedTrip', publishedId ?? '');
+  const [trip, setTrip] = useState<FeedTrip | null>(() => readCache<FeedTrip>(tripKey));
+  const [loading, setLoading] = useState(() => readCache<FeedTrip>(tripKey) === null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       if (!publishedId) return;
-      setLoading(true);
+      // Skeletons only with nothing cached; otherwise the trip stays on screen
+      // and is replaced once the fresh copy lands.
+      if (readCache<FeedTrip>(tripKey) === null) setLoading(true);
       void getPublishedTrip(publishedId, user?.id ?? null)
-        .then(setTrip)
-        .catch(() => setTrip(null))
+        .then((t) => {
+          setTrip(t);
+          if (t) writeCache(tripKey, t);
+        })
+        .catch(() => setTrip((prev) => prev))
         .finally(() => setLoading(false));
-    }, [publishedId, user]),
+    }, [publishedId, user, tripKey]),
   );
 
   const handleLike = async () => {
     if (!user || !trip || likeBusy) return;
     const wasLiked = trip.isLikedByMe;
-    setTrip({
+    const optimistic = {
       ...trip,
       isLikedByMe: !wasLiked,
       likeCount: trip.likeCount + (wasLiked ? -1 : 1),
-    });
+    };
+    setTrip(optimistic);
+    writeCache(tripKey, optimistic);
     setLikeBusy(true);
     try {
       if (wasLiked) await unlikeTrip(trip.id, user.id);
@@ -128,6 +137,7 @@ export default function SharedTripScreen() {
         targetId={trip.id}
         targetOwnerId={trip.userId}
         targetLabel={trip.title}
+        targetOwnerUsername={trip.profile.username}
       />
       <ScrollView contentContainerStyle={styles.content}>
         <Pressable

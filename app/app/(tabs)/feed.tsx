@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { FeedListSkeleton } from '@/components/skeleton';
+import { cacheKey, readCache, writeCache } from '@/features/social/social-cache';
 import { useAuth } from '@/features/auth/auth-context';
 import { getFeed, getRecommendations } from '@/features/social/social-repository';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
@@ -23,8 +24,11 @@ const PAGE_SIZE = 20;
 export default function FeedScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [trips, setTrips] = useState<FeedTrip[]>([]);
-  const [loading, setLoading] = useState(true);
+  const feedKey = cacheKey('feed', user?.id ?? '');
+  const [trips, setTrips] = useState<FeedTrip[]>(() => readCache<FeedTrip[]>(feedKey) ?? []);
+  // A cached feed means there is something to show on a cold start, so the
+  // skeleton is only for a genuinely empty first run.
+  const [loading, setLoading] = useState(() => readCache<FeedTrip[]>(feedKey) === null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -54,17 +58,18 @@ export default function FeedScreen() {
       } else {
         setTrips(data);
         setIsRecommended(recommended);
+        writeCache(feedKey, data);
       }
       setHasMore(data.length === PAGE_SIZE);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load feed.');
     }
-  }, [user]);
+  }, [user, feedKey]);
 
   useFocusEffect(
     useCallback(() => {
-      if (hasLoadedRef.current) {
+      if (hasLoadedRef.current || readCache<FeedTrip[]>(feedKey) !== null) {
         setRefreshing(true);
         void loadFeed(0, false).finally(() => setRefreshing(false));
         return;
@@ -74,7 +79,7 @@ export default function FeedScreen() {
         hasLoadedRef.current = true;
         setLoading(false);
       });
-    }, [loadFeed]),
+    }, [loadFeed, feedKey]),
   );
 
   const handleRefresh = async () => {

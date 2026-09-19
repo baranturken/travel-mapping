@@ -32,7 +32,7 @@ type Props = {
   onCountChange(delta: number): void;
 };
 
-type ReportTarget = { id: string; ownerId: string; label: string };
+type ReportTarget = { id: string; ownerId: string; label: string; username: string };
 
 export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
   const { user } = useAuth();
@@ -142,6 +142,7 @@ export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
                           id: item.id,
                           ownerId: item.userId,
                           label: `@${item.profile.username}`,
+                          username: item.profile.username,
                         })
                       }>
                       <Ionicons name="flag-outline" size={15} color={TravelColors.mutedText} />
@@ -185,6 +186,7 @@ export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
         targetId={reportTarget?.id ?? ''}
         targetOwnerId={reportTarget?.ownerId ?? null}
         targetLabel={reportTarget?.label}
+        targetOwnerUsername={reportTarget?.username}
       />
     </Modal>
   );

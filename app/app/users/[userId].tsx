@@ -26,6 +26,7 @@ import { UserAvatar } from '@/features/social/components/user-avatar';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
 import type { FeedTrip, UserProfile } from '@/features/social/types';
 import { cacheKey, invalidateCache, readCache, writeCache } from '@/features/social/social-cache';
+import { errorMessage } from '@/lib/errors';
 import { ReportSheet } from '@/features/social/components/report-sheet';
 import { blockUser, isBlockedByMe, unblockUser } from '@/features/social/moderation';
 
@@ -99,7 +100,7 @@ export default function UserProfileScreen() {
           setBlocked(false);
           invalidateCache('');
         } catch (err) {
-          Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
+          Alert.alert('Error', errorMessage(err));
         }
       })();
       return;
@@ -123,7 +124,7 @@ export default function UserProfileScreen() {
                 invalidateCache('');
                 router.back();
               } catch (err) {
-                Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
+                Alert.alert('Error', errorMessage(err));
               }
             })();
           },
@@ -178,7 +179,7 @@ export default function UserProfileScreen() {
         writeCache(profileKey, reverted);
         return reverted;
       });
-      Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert('Error', errorMessage(err));
     } finally {
       setFollowLoading(false);
     }
@@ -230,6 +231,11 @@ export default function UserProfileScreen() {
         targetId={profile.id}
         targetOwnerId={profile.id}
         targetLabel={`@${profile.username}`}
+        targetOwnerUsername={profile.username}
+        onBlocked={() => {
+          setBlocked(true);
+          router.back();
+        }}
       />
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>

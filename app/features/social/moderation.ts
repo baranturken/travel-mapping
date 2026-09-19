@@ -20,10 +20,15 @@ export {
 export async function blockUser(blockerId: string, blockedId: string): Promise<void> {
   if (blockerId === blockedId) throw new Error('You cannot block yourself.');
 
+  // A plain insert, not an upsert. PostgREST compiles upsert to
+  // INSERT ... ON CONFLICT DO UPDATE, which needs UPDATE privilege and an
+  // UPDATE policy on user_blocks — neither of which exists, and neither of
+  // which should: a block row has nothing to update. Blocking twice is simply
+  // a no-op, so the duplicate-key error is the expected outcome, not a failure.
   const { error } = await supabase
     .from('user_blocks')
-    .upsert({ blocker_id: blockerId, blocked_id: blockedId }, { onConflict: 'blocker_id,blocked_id' });
-  if (error) throw error;
+    .insert({ blocker_id: blockerId, blocked_id: blockedId });
+  if (error && error.code !== '23505') throw error;
 
   // Blocking implies not following. Leaving the follow edges in place would
   // keep the blocked account in follower counts and let a later unblock

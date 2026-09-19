@@ -14,6 +14,16 @@ export type AuthDeepLinkParams = {
   accessToken: string | null;
   refreshToken: string | null;
   code: string | null;
+  /**
+   * The preferred shape on mobile: a one-time hash the app exchanges via
+   * verifyOtp. Unlike the implicit flow's tokens it travels in the query
+   * string, not the fragment — fragments are routinely dropped between the
+   * mail app, the OS and Expo Go, which leaves the app with a bare URL and no
+   * way to tell a stripped link from an invalid one.
+   */
+  tokenHash: string | null;
+  /** Which flow produced the link: 'recovery', 'signup', 'email', 'invite'… */
+  type: string | null;
   errorDescription: string | null;
 };
 
@@ -67,6 +77,8 @@ export function extractAuthParams(url: string): AuthDeepLinkParams {
     accessToken: fragment.access_token ?? query.access_token ?? null,
     refreshToken: fragment.refresh_token ?? query.refresh_token ?? null,
     code: query.code ?? fragment.code ?? null,
+    tokenHash: query.token_hash ?? fragment.token_hash ?? null,
+    type: query.type ?? fragment.type ?? null,
     errorDescription:
       fragment.error_description ??
       query.error_description ??

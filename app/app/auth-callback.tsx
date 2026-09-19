@@ -44,9 +44,28 @@ export default function AuthCallbackScreen() {
 
       if (!url) return; // wait for the deep link to arrive
 
-      const { accessToken, refreshToken, code, errorDescription } = extractAuthParams(url);
+      const { accessToken, refreshToken, code, tokenHash, type, errorDescription } =
+        extractAuthParams(url);
 
       try {
+        if (tokenHash) {
+          // Preferred path. The email links here with ?token_hash=&type=, which
+          // survives the trip through the mail app and the OS — unlike the
+          // implicit flow's fragment, which Expo Go strips entirely.
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: (type ?? 'email') as 'recovery' | 'signup' | 'email' | 'invite' | 'magiclink',
+          });
+          if (error) throw error;
+
+          // A recovery link means the user is here to choose a new password,
+          // not to land on the feed.
+          if (!cancelled) {
+            router.replace((type === 'recovery' ? '/reset-password' : '/') as Href);
+          }
+          return;
+        }
+
         if (accessToken && refreshToken) {
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,

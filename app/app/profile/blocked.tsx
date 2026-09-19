@@ -10,6 +10,7 @@ import { useAuth } from '@/features/auth/auth-context';
 import { UserAvatar } from '@/features/social/components/user-avatar';
 import { listBlockedProfiles, unblockUser } from '@/features/social/moderation';
 import { invalidateCache } from '@/features/social/social-cache';
+import { errorMessage } from '@/lib/errors';
 import type { Profile } from '@/features/social/types';
 
 type BlockedRow = { blocked_id: string; created_at: string; profile: Profile | null };
@@ -48,7 +49,7 @@ export default function BlockedAccountsScreen() {
               invalidateCache('');
             })
             .catch((err: unknown) =>
-              Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.'),
+              Alert.alert('Error', errorMessage(err)),
             )
             .finally(() => setBusyId(null));
         },

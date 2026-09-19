@@ -73,7 +73,46 @@ describe('extractAuthParams', () => {
       accessToken: null,
       refreshToken: null,
       code: null,
+      tokenHash: null,
+      type: null,
       errorDescription: null,
+    });
+  });
+
+  // The shape the app actually relies on for email links. The implicit flow's
+  // tokens live in the fragment, which Expo Go strips on the way in — a real
+  // reset link arrived as a bare "exp://192.168.1.7:8081/" with everything
+  // after the host removed. token_hash rides in the query string instead.
+  describe('token_hash links', () => {
+    it('reads the hash and its type', () => {
+      const r = extractAuthParams(
+        'exp://192.168.1.7:8081/--/auth-callback?token_hash=abc123&type=recovery',
+      );
+      expect(r.tokenHash).toBe('abc123');
+      expect(r.type).toBe('recovery');
+    });
+
+    it('distinguishes signup from recovery, so the app routes correctly', () => {
+      expect(
+        extractAuthParams('travelmapping://auth-callback?token_hash=x&type=signup').type,
+      ).toBe('signup');
+      expect(
+        extractAuthParams('travelmapping://auth-callback?token_hash=x&type=recovery').type,
+      ).toBe('recovery');
+    });
+
+    it('still reads a hash delivered in the fragment', () => {
+      // Belt and braces: if a fragment does survive, do not ignore it.
+      const r = extractAuthParams('travelmapping://auth-callback#token_hash=frag&type=email');
+      expect(r.tokenHash).toBe('frag');
+      expect(r.type).toBe('email');
+    });
+
+    it('reports nothing usable for the stripped URL Expo Go actually delivered', () => {
+      const r = extractAuthParams('exp://192.168.1.7:8081/');
+      expect(r.tokenHash).toBeNull();
+      expect(r.accessToken).toBeNull();
+      expect(r.code).toBeNull();
     });
   });
 

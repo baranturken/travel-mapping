@@ -51,10 +51,20 @@ export default function ResetPasswordScreen() {
       }
       if (!url) return; // wait for the URL to arrive
 
-      const { accessToken, refreshToken, code, errorDescription } = extractAuthParams(url);
+      const { accessToken, refreshToken, code, tokenHash, type, errorDescription } =
+        extractAuthParams(url);
 
       try {
-        if (accessToken && refreshToken) {
+        if (tokenHash) {
+          // The link may land here directly rather than via auth-callback,
+          // depending on Site URL. Same exchange either way.
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: (type ?? 'recovery') as 'recovery' | 'email',
+          });
+          if (error) throw error;
+          if (!cancelled) setLinkState('ready');
+        } else if (accessToken && refreshToken) {
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
@@ -133,6 +143,14 @@ export default function ResetPasswordScreen() {
                   {linkError ?? 'This reset link is invalid or has expired.'} Request a new one from
                   the sign-in screen.
                 </Text>
+                {/* Development-only: the exact URL the app received. Deep links
+                    can lose their fragment between the mail app, the OS and the
+                    router, and without seeing the raw URL that is guesswork. */}
+                {__DEV__ ? (
+                  <Text selectable style={styles.debugUrl}>
+                    {url ?? '(no url yet)'}
+                  </Text>
+                ) : null}
                 <Pressable
                   style={styles.primaryButton}
                   onPress={() => router.replace('/(auth)/sign-in' as Href)}>
@@ -196,6 +214,15 @@ export default function ResetPasswordScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TravelColors.background },
+  debugUrl: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: TravelColors.tintSurface,
+    color: TravelColors.secondaryText,
+    fontSize: 11,
+    fontFamily: 'Courier',
+  },
   flex: { flex: 1 },
   content: { padding: 24, gap: 24, flexGrow: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 8 },

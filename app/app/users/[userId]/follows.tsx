@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import {
   unfollowUser,
   type FollowListEntry,
 } from '@/features/social/social-repository';
+import { cacheKey, readCache, writeCache } from '@/features/social/social-cache';
 
 type Tab = 'followers' | 'following';
 
@@ -25,13 +26,22 @@ export default function FollowsScreen() {
   const { user } = useAuth();
 
   const activeTab: Tab = tab === 'following' ? 'following' : 'followers';
-  const [entries, setEntries] = useState<FollowListEntry[]>([]);
+  const keyFor = useCallback(
+    (t: Tab) => cacheKey(t === 'followers' ? 'followers' : 'following', userId ?? ''),
+    [userId],
+  );
+
+  const [entries, setEntries] = useState<FollowListEntry[]>(
+    () => readCache<FollowListEntry[]>(keyFor(activeTab)) ?? [],
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
   // Which tab the current `entries` belong to. Deriving loading from this
   // avoids a synchronous setState in the effect body, and means switching tabs
   // cannot briefly show the previous tab's people as if they were the new
   // tab's.
-  const [loadedTab, setLoadedTab] = useState<Tab | null>(null);
+  const [loadedTab, setLoadedTab] = useState<Tab | null>(
+    () => (readCache<FollowListEntry[]>(keyFor(activeTab)) ? activeTab : null),
+  );
   const loading = loadedTab !== activeTab;
 
   useEffect(() => {
@@ -45,16 +55,22 @@ export default function FollowsScreen() {
           : await listFollowing(userId, user?.id ?? null);
       if (cancelled) return;
       setEntries(rows);
+      writeCache(keyFor(activeTab), rows);
       setLoadedTab(activeTab);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [userId, user?.id, activeTab]);
+  }, [userId, user?.id, activeTab, keyFor]);
 
   const switchTab = (next: Tab) => {
     if (next === activeTab) return;
+    const cached = readCache<FollowListEntry[]>(keyFor(next));
+    if (cached) {
+      setEntries(cached);
+      setLoadedTab(next);
+    }
     router.setParams({ tab: next });
   };
 

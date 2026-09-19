@@ -17,7 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
-import { reportContent } from '@/features/social/moderation';
+import { blockUser, reportContent } from '@/features/social/moderation';
+import { getIsFollowing, unfollowUser } from '@/features/social/social-repository';
+import { invalidateCache } from '@/features/social/social-cache';
+import { errorMessage } from '@/lib/errors';
 import {
   REPORT_REASONS,
   type ReportReason,
@@ -32,8 +35,12 @@ type Props = {
   targetOwnerId: string | null;
   /** Shown in the heading, e.g. a trip title or "@username". */
   targetLabel?: string;
+  /** Used in the follow-up prompt. Falls back to "this account". */
+  targetOwnerUsername?: string;
   /** Called after a successful report, so the caller can also hide the item. */
   onReported?: () => void;
+  /** Called after the follow-up prompt blocks the account. */
+  onBlocked?: () => void;
 };
 
 const TARGET_NOUN: Record<ReportTargetType, string> = {
@@ -49,7 +56,9 @@ export function ReportSheet({
   targetId,
   targetOwnerId,
   targetLabel,
+  targetOwnerUsername,
   onReported,
+  onBlocked,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -83,14 +92,66 @@ export function ReportSheet({
       reset();
       onClose();
       onReported?.();
-      Alert.alert(
-        'Report received',
-        'Thanks — our team reviews reports within 24 hours and will take action if this breaks our rules.',
-      );
+      await offerFollowUp();
     } catch (err) {
       setSubmitting(false);
-      Alert.alert('Could not send report', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert('Could not send report', errorMessage(err));
     }
+  };
+
+  // Reporting someone is usually the moment you also want them out of your
+  // feed. Asking here saves hunting for the block control, and offering
+  // "unfollow" separately matters because blocking is heavier than most people
+  // want for, say, spam.
+  const offerFollowUp = async () => {
+    const name = targetOwnerUsername ? `@${targetOwnerUsername}` : 'this account';
+    const thanks =
+      'Thanks — our team reviews reports within 24 hours and will take action if this breaks our rules.';
+
+    if (!user || !targetOwnerId || targetOwnerId === user.id) {
+      Alert.alert('Report received', thanks);
+      return;
+    }
+
+    // Only offer to unfollow when there is something to unfollow.
+    let following = false;
+    try {
+      following = await getIsFollowing(user.id, targetOwnerId);
+    } catch {
+      // Not worth failing the prompt over; just omit the option.
+    }
+
+    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+
+    if (following) {
+      buttons.push({
+        text: `Unfollow ${name}`,
+        onPress: () => {
+          void unfollowUser(user.id, targetOwnerId)
+            .then(() => invalidateCache(''))
+            .catch((err: unknown) => Alert.alert('Could not unfollow', errorMessage(err)));
+        },
+      });
+    }
+
+    buttons.push({
+      text: `Block ${name}`,
+      style: 'destructive',
+      onPress: () => {
+        void blockUser(user.id, targetOwnerId)
+          .then(() => {
+            invalidateCache('');
+            onBlocked?.();
+          })
+          .catch((err: unknown) => Alert.alert('Could not block', errorMessage(err)));
+      },
+    });
+
+    buttons.push({ text: 'No thanks', style: 'cancel' });
+
+    Alert.alert('Report received', `${thanks}
+
+Would you also like to do any of these?`, buttons);
   };
 
   return (
