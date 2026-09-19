@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 
 import { TravelColors } from '@/constants/theme';
 import { AuthProvider } from '@/features/auth/auth-context';
+import { TurnstileProvider } from '@/features/auth/components/turnstile-provider';
 import { migrateDbIfNeeded } from '@/lib/db/migrations';
 import { APP_DATABASE_NAME } from '@/lib/db/sqlite';
 
@@ -56,8 +57,9 @@ class AppShellErrorBoundary extends React.Component<
 export default function RootLayout() {
   return (
     <ThemeProvider value={travelTheme}>
-      <AuthProvider>
-        <AppShellErrorBoundary>
+      <TurnstileProvider>
+        <AuthProvider>
+          <AppShellErrorBoundary>
           <SQLiteProvider databaseName={APP_DATABASE_NAME} onInit={migrateDbIfNeeded}>
             <Stack
               screenOptions={{
@@ -85,8 +87,9 @@ export default function RootLayout() {
               <Stack.Screen name="mfa-challenge" options={{ headerShown: false }} />
             </Stack>
           </SQLiteProvider>
-        </AppShellErrorBoundary>
-      </AuthProvider>
+          </AppShellErrorBoundary>
+        </AuthProvider>
+      </TurnstileProvider>
       <StatusBar style="dark" />
     </ThemeProvider>
   );

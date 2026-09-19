@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
+import { useTurnstile } from '@/features/auth/components/turnstile-provider';
 import { supabase } from '@/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -27,6 +28,7 @@ WebBrowser.maybeCompleteAuthSession();
 export default function SignInScreen() {
   const router = useRouter();
   const { signIn } = useAuth();
+  const { requestToken } = useTurnstile();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,8 @@ export default function SignInScreen() {
     }
     try {
       setLoading(true);
-      await signIn(email.trim(), password);
+      const captchaToken = await requestToken();
+      await signIn(email.trim(), password, captchaToken);
     } catch (err) {
       Alert.alert('Sign-in failed', err instanceof Error ? err.message : 'Please try again.');
     } finally {

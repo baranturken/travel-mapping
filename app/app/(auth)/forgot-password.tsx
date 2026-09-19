@@ -17,10 +17,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { useTurnstile } from '@/features/auth/components/turnstile-provider';
 import { supabase } from '@/lib/supabase';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const { requestToken } = useTurnstile();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -33,8 +35,12 @@ export default function ForgotPasswordScreen() {
     }
     try {
       setLoading(true);
+      const captchaToken = await requestToken();
       const redirectTo = Linking.createURL('reset-password');
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo,
+        ...(captchaToken ? { captchaToken } : {}),
+      });
       // Supabase rate-limits reset emails server-side. Surface rate-limit
       // errors, but otherwise always show the same success state so the form
       // can't be used to probe which emails have accounts.
