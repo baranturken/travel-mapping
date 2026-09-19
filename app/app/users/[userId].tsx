@@ -38,6 +38,7 @@ export default function UserProfileScreen() {
   // Tapping the Trips stat should park the header off-screen and start the
   // list at the top, rather than jumping to an arbitrary offset. Declared here,
   // above the early returns, so hook order stays stable across renders.
+  const hasLoadedRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const tripsOffsetRef = useRef(0);
   const scrollToTrips = () => {
@@ -54,7 +55,9 @@ export default function UserProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!userId || !user) return;
-      setLoading(true);
+      // Skeletons only before first paint; a re-focus refresh swaps the content
+      // in place rather than blanking the screen.
+      if (!hasLoadedRef.current) setLoading(true);
       void Promise.all([
         getUserProfile(userId, user.id),
         getUserTrips(userId, user.id),
@@ -63,7 +66,10 @@ export default function UserProfileScreen() {
           setProfile(p);
           setTrips(t);
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          hasLoadedRef.current = true;
+          setLoading(false);
+        });
     }, [userId, user]),
   );
 

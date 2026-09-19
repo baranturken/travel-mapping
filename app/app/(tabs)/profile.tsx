@@ -38,6 +38,7 @@ export default function ProfileScreen() {
   // Tapping Trips parks the header off-screen and starts the published-trips
   // list at the top. Measured with onLayout rather than a fixed offset, since
   // the banner, bio and travel-stats card are all conditional.
+  const hasLoadedRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const tripsOffsetRef = useRef(0);
   const scrollToTrips = () => {
@@ -55,13 +56,18 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user || !profile) return;
-      setLoading(true);
+      // Only show skeletons before there is anything to show. Coming back from
+      // another screen, the content stays put and is replaced in place.
+      if (!hasLoadedRef.current) setLoading(true);
       void Promise.all([getUserTrips(user.id, user.id), getFollowCounts(user.id)])
         .then(([tripData, counts]) => {
           setTrips(tripData);
           setFollowCounts(counts);
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          hasLoadedRef.current = true;
+          setLoading(false);
+        });
     }, [user, profile]),
   );
 
