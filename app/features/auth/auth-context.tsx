@@ -23,8 +23,11 @@ type AuthContextValue = {
   // must pass the 2FA challenge before using the app.
   mfaPending: boolean;
   refreshMfaPending(): Promise<void>;
-  signIn(email: string, password: string): Promise<void>;
-  signUp(email: string, password: string): Promise<void>;
+  // captchaToken comes from the Turnstile widget. It is optional so the
+  // context stays usable when Turnstile is not configured; Supabase only
+  // requires it once captcha protection is enabled on the project.
+  signIn(email: string, password: string, captchaToken?: string | null): Promise<void>;
+  signUp(email: string, password: string, captchaToken?: string | null): Promise<void>;
   signOut(): Promise<void>;
   saveProfile(data: {
     username: string;
@@ -113,10 +116,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadProfile, refreshMfaPending]);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, captchaToken?: string | null) => {
     const locked = await getLockRemainingMs(email);
     if (locked) throw new Error(formatLockMessage(locked));
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: captchaToken ? { captchaToken } : undefined,
+    });
     if (error) {
       await recordFailedAttempt(email);
       throw error;
@@ -124,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearAttempts(email);
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, captchaToken?: string | null) => {
     // Point the confirmation email at our own callback route rather than
     // relying on the project's Site URL. The route exchanges the token and
     // routes the user onward; without it the link lands on whatever Site URL
@@ -132,7 +139,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: Linking.createURL('auth-callback') },
+      options: {
+        emailRedirectTo: Linking.createURL('auth-callback'),
+        ...(captchaToken ? { captchaToken } : {}),
+      },
     });
     if (error) throw error;
   };
