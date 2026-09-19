@@ -10,6 +10,7 @@ import {
   recordFailedAttempt,
 } from '@/features/auth/login-throttle';
 import { getMfaStatus } from '@/features/auth/mfa';
+import { clearCache } from '@/features/social/social-cache';
 
 export type { Profile } from '@/features/social/types';
 
@@ -158,6 +159,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut({ scope: 'local' });
     }
     setProfile(null);
+    // Cached profiles, trips and follow state belong to the account that just
+    // left. Leaving them would show one user another user's view.
+    clearCache();
   };
 
   const saveProfile = async (data: {

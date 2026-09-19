@@ -25,14 +25,21 @@ import {
 import { UserAvatar } from '@/features/social/components/user-avatar';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
 import type { FeedTrip, UserProfile } from '@/features/social/types';
+import { cacheKey, readCache, writeCache } from '@/features/social/social-cache';
 
 export default function UserProfileScreen() {
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { user } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [trips, setTrips] = useState<FeedTrip[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from cache so a revisit paints immediately. The focus effect still
+  // refetches underneath; this only removes the blank skeleton in between.
+  const profileKey = cacheKey('profile', userId ?? '');
+  const tripsKey = cacheKey('userTrips', userId ?? '');
+  const [profile, setProfile] = useState<UserProfile | null>(
+    () => readCache<UserProfile>(profileKey),
+  );
+  const [trips, setTrips] = useState<FeedTrip[]>(() => readCache<FeedTrip[]>(tripsKey) ?? []);
+  const [loading, setLoading] = useState(() => readCache<UserProfile>(profileKey) === null);
   const [followLoading, setFollowLoading] = useState(false);
 
   // Tapping the Trips stat should park the header off-screen and start the
@@ -55,9 +62,10 @@ export default function UserProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!userId || !user) return;
-      // Skeletons only before first paint; a re-focus refresh swaps the content
-      // in place rather than blanking the screen.
-      if (!hasLoadedRef.current) setLoading(true);
+      // Skeletons only when there is genuinely nothing to show — no cache and
+      // no previous load. Otherwise the content stays put and is replaced once
+      // the fresh copy lands.
+      if (!hasLoadedRef.current && readCache<UserProfile>(profileKey) === null) setLoading(true);
       void Promise.all([
         getUserProfile(userId, user.id),
         getUserTrips(userId, user.id),
@@ -65,27 +73,32 @@ export default function UserProfileScreen() {
         .then(([p, t]) => {
           setProfile(p);
           setTrips(t);
+          if (p) writeCache(profileKey, p);
+          writeCache(tripsKey, t);
         })
         .finally(() => {
           hasLoadedRef.current = true;
           setLoading(false);
         });
-    }, [userId, user]),
+    }, [userId, user, profileKey, tripsKey]),
   );
 
   const handleToggleFollow = async () => {
     if (!user || !profile || followLoading) return;
     const wasFollowing = profile.isFollowedByMe;
     setFollowLoading(true);
-    setProfile((p) =>
-      p
-        ? {
-            ...p,
-            isFollowedByMe: !wasFollowing,
-            followersCount: p.followersCount + (wasFollowing ? -1 : 1),
-          }
-        : null,
-    );
+    setProfile((p) => {
+      if (!p) return null;
+      const next = {
+        ...p,
+        isFollowedByMe: !wasFollowing,
+        followersCount: p.followersCount + (wasFollowing ? -1 : 1),
+      };
+      // Otherwise leaving and returning would show the pre-toggle state from
+      // cache until the refetch lands.
+      writeCache(profileKey, next);
+      return next;
+    });
     try {
       if (wasFollowing) {
         await unfollowUser(user.id, profile.id);
@@ -93,15 +106,16 @@ export default function UserProfileScreen() {
         await followUser(user.id, profile.id);
       }
     } catch (err) {
-      setProfile((p) =>
-        p
-          ? {
-              ...p,
-              isFollowedByMe: wasFollowing,
-              followersCount: p.followersCount + (wasFollowing ? 1 : -1),
-            }
-          : null,
-      );
+      setProfile((p) => {
+        if (!p) return null;
+        const reverted = {
+          ...p,
+          isFollowedByMe: wasFollowing,
+          followersCount: p.followersCount + (wasFollowing ? 1 : -1),
+        };
+        writeCache(profileKey, reverted);
+        return reverted;
+      });
       Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
     } finally {
       setFollowLoading(false);
