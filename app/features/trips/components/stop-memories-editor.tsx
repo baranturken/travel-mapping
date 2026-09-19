@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
 import type { Control, FieldErrors, UseFormSetValue } from 'react-hook-form';
 import { Controller, useFieldArray, useWatch } from 'react-hook-form';
-import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { TravelColors } from '@/constants/theme';
 import { createMemoryFromAsset } from '@/features/trips/memory-location';
@@ -35,6 +35,7 @@ export function StopMemoriesEditor({
     name: `stops.${stopIndex}.memories`,
   });
   const [selectedMemoryIndex, setSelectedMemoryIndex] = useState(0);
+  const [isPickingImage, setIsPickingImage] = useState(false);
   const memories = useMemo(
     () => memoryArray.fields.map((field, index) => memoryValues?.[index] ?? field),
     [memoryArray.fields, memoryValues],
@@ -57,6 +58,7 @@ export function StopMemoriesEditor({
 
   const openPicker = async (allowsMultipleSelection: boolean) => {
     try {
+      setIsPickingImage(true);
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection,
@@ -70,6 +72,8 @@ export function StopMemoriesEditor({
       const message = error instanceof Error ? error.message : 'Please try again.';
       Alert.alert('Could not add photo', message);
       return [];
+    } finally {
+      setIsPickingImage(false);
     }
   };
 
@@ -152,7 +156,10 @@ export function StopMemoriesEditor({
         />
 
         <View style={styles.actionRow}>
-          <Pressable style={styles.actionButton} onPress={() => void handleReplaceMemory(memoryIndex)}>
+          <Pressable
+            style={[styles.actionButton, isPickingImage && styles.actionButtonDisabled]}
+            disabled={isPickingImage}
+            onPress={() => void handleReplaceMemory(memoryIndex)}>
             <Text style={styles.actionButtonText}>Replace photo</Text>
           </Pressable>
           <Pressable
@@ -184,8 +191,15 @@ export function StopMemoriesEditor({
               <Text style={styles.memoryCountPillText}>{memoryArray.fields.length} photos</Text>
             </View>
           ) : null}
-          <Pressable style={styles.actionButton} onPress={() => void handleAddMemory()}>
-            <Text style={styles.actionButtonText}>Add photos</Text>
+          <Pressable
+            style={[styles.actionButton, isPickingImage && styles.actionButtonDisabled]}
+            disabled={isPickingImage}
+            onPress={() => void handleAddMemory()}>
+            {isPickingImage ? (
+              <ActivityIndicator size="small" color={TravelColors.primary} />
+            ) : (
+              <Text style={styles.actionButtonText}>Add photos</Text>
+            )}
           </Pressable>
         </View>
       </View>
@@ -239,7 +253,7 @@ export function StopMemoriesEditor({
                   key={field.id}
                   style={[styles.thumbButton, isSelected && styles.thumbButtonSelected]}
                   onPress={() => setSelectedMemoryIndex(memoryIndex)}>
-                  <Image source={{ uri: memory.imageUri }} style={styles.thumbImage} />
+                  <Image source={{ uri: memory.imageUri }} style={[styles.thumbImage, isSelected && styles.thumbImageSelected]} />
                   <Text style={[styles.thumbLabel, isSelected && styles.thumbLabelSelected]}>
                     {memoryIndex + 1}
                   </Text>
@@ -382,6 +396,9 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     backgroundColor: '#dfeaf5',
   },
+  thumbImageSelected: {
+    borderColor: TravelColors.primary,
+  },
   thumbLabel: {
     color: TravelColors.secondaryText,
     fontSize: 12,
@@ -445,6 +462,9 @@ const styles = StyleSheet.create({
     color: TravelColors.primary,
     fontSize: 13,
     fontWeight: '700',
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
   },
   removeButton: {
     backgroundColor: '#fff6f6',

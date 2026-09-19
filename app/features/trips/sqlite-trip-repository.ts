@@ -21,6 +21,9 @@ type TripRow = {
   end_date: string | null;
   created_at: string;
   updated_at: string;
+  is_public: number;
+  supabase_id: string | null;
+  published_at: string | null;
 };
 
 type StopRow = {
@@ -80,6 +83,9 @@ function mapTripRow(row: TripRow): TripSummary {
     endDate: row.end_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    isPublic: row.is_public === 1,
+    supabaseId: row.supabase_id ?? null,
+    publishedAt: row.published_at ?? null,
   };
 }
 
@@ -249,6 +255,9 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
           trips.end_date,
           trips.created_at,
           trips.updated_at,
+          trips.is_public,
+          trips.supabase_id,
+          trips.published_at,
           (SELECT COUNT(*) FROM stops WHERE stops.trip_id = trips.id) AS stop_count,
           (
             SELECT city_name || ', ' || country_name
@@ -279,8 +288,8 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
     async getTripDetail(tripId) {
       const tripRow = await db.getFirstAsync<TripRow>(
         `
-          SELECT id, title, created_at, updated_at
-          , start_date, end_date
+          SELECT id, title, created_at, updated_at,
+            start_date, end_date, is_public, supabase_id, published_at
           FROM trips
           WHERE id = ?
         `,
@@ -595,6 +604,18 @@ export function createSQLiteTripRepository(db: SQLiteDatabase): TripRepository {
       const existingManagedMemoryUris = await getTripMemoryUris(db, tripId);
       await db.runAsync(`DELETE FROM trips WHERE id = ?`, tripId);
       deleteManagedMemoryUris(existingManagedMemoryUris);
+    },
+
+    async setTripPublishStatus(tripId, supabaseId, isPublic, publishedAt) {
+      const now = new Date().toISOString();
+      await db.runAsync(
+        `UPDATE trips SET supabase_id = ?, is_public = ?, published_at = ?, updated_at = ? WHERE id = ?`,
+        supabaseId,
+        isPublic ? 1 : 0,
+        publishedAt,
+        now,
+        tripId,
+      );
     },
   };
 }

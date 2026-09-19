@@ -5,13 +5,13 @@ dist/
 *.log
 .env
 .env.*
+!.env.example
 coverage/
 android/
 ios/
 .github/
-docs/
+docs/ai/
 mcp-server/
-README.md
 package.json
 package-lock.json
 travel-mapping-draft.png

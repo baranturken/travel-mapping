@@ -6,4 +6,10 @@ export interface TripRepository {
   createTrip(input: CreateTripInput): Promise<string>;
   updateTrip(tripId: string, input: CreateTripInput): Promise<void>;
   deleteTrip(tripId: string): Promise<void>;
+  setTripPublishStatus(
+    tripId: string,
+    supabaseId: string | null,
+    isPublic: boolean,
+    publishedAt: string | null,
+  ): Promise<void>;
 }

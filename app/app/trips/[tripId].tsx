@@ -1,8 +1,9 @@
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -14,8 +15,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
+import { WebView } from 'react-native-webview';
 
 import { TravelColors } from '@/constants/theme';
+import { TripDetailSkeleton } from '@/components/skeleton';
+import { useAuth } from '@/features/auth/auth-context';
+import { buildPhotoStoryHtml } from '@/features/trips/photo-story-renderer';
+import { buildStaticRouteMapUrl } from '@/features/trips/geoapify-map';
+import {
+  PublishTripModal,
+  type PublishablePhoto,
+  type PublishSelection,
+} from '@/features/trips/components/publish-trip-modal';
 import { TripMapWebView, type LegRouteData } from '@/features/trips/components/trip-map-webview';
 import {
   formatTripDateRange,
@@ -36,18 +47,43 @@ import {
   type TripDetail,
   type TripStop,
 } from '@/features/trips/types';
+import { publishTrip, unpublishTrip } from '@/features/social/social-repository';
+import {
+  deleteTripPhotos,
+  uploadStoryCover,
+  uploadTripPhotos,
+} from '@/features/social/trip-photo-upload';
+
+// JS injected after the WebView bridge is ready to kick off canvas rendering.
+const COVER_TRIGGER_JS =
+  'if(window.runStoryCanvas){window.runStoryCanvas().catch(function(e){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage("error:"+String(e));});}true;';
 
 export default function TripDetailScreen() {
   const router = useRouter();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const db = useSQLiteContext();
   const repository = useMemo(() => createSQLiteTripRepository(db), [db]);
+  const { user } = useAuth();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [legRoutes, setLegRoutes] = useState<Record<string, LegRouteData>>({});
+
+  // ── Story-cover rendering (hidden WebView) ────────────────────────────────
+  // A 9:16 "story" image is rendered once and reused as the post hero. We
+  // pre-render it in the background after the trip loads so tapping Publish is
+  // fast ("instant publish"); the result lives only in memory and is discarded
+  // when the screen unmounts.
+  const [coverHtml, setCoverHtml] = useState<string | null>(null);
+  const coverWebViewRef = useRef<WebView>(null);
+  const coverResolveRef = useRef<((b64: string | null) => void) | null>(null);
+  const coverInFlightRef = useRef<Promise<string | null> | null>(null);
+  const preparedCoverRef = useRef<{ signature: string; base64: string } | null>(null);
+  const coverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadTrip = useCallback(async () => {
     setIsLoading(true);
@@ -75,6 +111,103 @@ export default function TripDetailScreen() {
     useCallback(() => {
       void loadTrip();
     }, [loadTrip]),
+  );
+
+  const coverSignature = trip
+    ? `${trip.id}:${trip.updatedAt}:${trip.stops.reduce((n, s) => n + s.memories.length, 0)}:${Object.keys(legRoutes).length}`
+    : '';
+
+  // Resolve the pending cover render with the base64 the canvas produced (or null).
+  const handleCoverMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    const data = event.nativeEvent.data;
+    const resolve = coverResolveRef.current;
+    coverResolveRef.current = null;
+    if (coverTimeoutRef.current) {
+      clearTimeout(coverTimeoutRef.current);
+      coverTimeoutRef.current = null;
+    }
+    setCoverHtml(null);
+    const base64 = data.startsWith('data:image') ? data.split(',')[1] ?? null : null;
+    resolve?.(base64);
+  }, []);
+
+  // Renders the story cover in the hidden WebView and resolves with base64 JPEG.
+  // Guarded so only one render runs at a time; concurrent callers share it.
+  const renderStoryCover = useCallback(async (coverUris: string[]): Promise<string | null> => {
+    if (!trip) return null;
+    if (coverInFlightRef.current) return coverInFlightRef.current;
+
+    const work = (async () => {
+      const photoBase64s: string[] = [];
+      const memoryUris = coverUris.slice(0, 4);
+      for (const uri of memoryUris) {
+        try {
+          const { uri: jpegUri } = await ImageManipulator.manipulateAsync(
+            uri,
+            [{ resize: { width: 960 } }],
+            { compress: 0.78, format: ImageManipulator.SaveFormat.JPEG },
+          );
+          photoBase64s.push(
+            await FileSystem.readAsStringAsync(jpegUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            }),
+          );
+        } catch {
+          // Skip photos that fail to encode.
+        }
+      }
+
+      const mapUrl = buildStaticRouteMapUrl(trip.stops);
+      const stats = computeTripStats(trip, legRoutes);
+      const html = buildPhotoStoryHtml(trip, stats, legRoutes, photoBase64s, {
+        showRoute: true,
+        template: 'navy',
+        mapUrl,
+      });
+
+      return await new Promise<string | null>((resolve) => {
+        coverResolveRef.current = resolve;
+        coverTimeoutRef.current = setTimeout(() => {
+          coverResolveRef.current = null;
+          setCoverHtml(null);
+          resolve(null);
+        }, 30000);
+        setCoverHtml(html);
+      });
+    })();
+
+    coverInFlightRef.current = work;
+    try {
+      return await work;
+    } finally {
+      coverInFlightRef.current = null;
+    }
+  }, [legRoutes, trip]);
+
+  // Background pre-render: warm the cover so Publish doesn't have to wait.
+  useEffect(() => {
+    if (!trip || trip.supabaseId) return; // skip if already published
+    const hasPhotos = trip.stops.some((s) => s.memories.length > 0);
+    if (!hasPhotos) return;
+    if (preparedCoverRef.current?.signature === coverSignature) return;
+    let cancelled = false;
+    const allUris = trip.stops.flatMap((s) => s.memories.map((m) => m.imageUri));
+    void (async () => {
+      const base64 = await renderStoryCover(allUris);
+      if (!cancelled && base64) {
+        preparedCoverRef.current = { signature: coverSignature, base64 };
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [trip, coverSignature, renderStoryCover]);
+
+  useEffect(
+    () => () => {
+      if (coverTimeoutRef.current) clearTimeout(coverTimeoutRef.current);
+    },
+    [],
   );
 
   const handleDeleteTrip = useCallback(() => {
@@ -132,13 +265,153 @@ export default function TripDetailScreen() {
     }
   }, [isDuplicating, repository, router, trip]);
 
+  // All photo memories across stops, used to populate the publish picker.
+  const publishMemories: PublishablePhoto[] = useMemo(
+    () =>
+      trip
+        ? trip.stops.flatMap((s) =>
+            s.memories.map((m) => ({
+              id: m.id,
+              imageUri: m.imageUri,
+              caption: m.caption,
+              cityName: s.cityName,
+              stopLabel: `${s.cityName}, ${s.countryName}`,
+            })),
+          )
+        : [],
+    [trip],
+  );
+
+  const handlePublishTrip = useCallback(() => {
+    if (!trip || !user || isPublishing) return;
+    setPublishModalOpen(true);
+  }, [trip, user, isPublishing]);
+
+  const runPublish = useCallback(
+    async (selection: PublishSelection) => {
+      if (!trip || !user) return;
+      setPublishModalOpen(false);
+      try {
+        setIsPublishing(true);
+        const stopsJson = trip.stops.map((s) => ({
+          cityName: s.cityName,
+          countryName: s.countryName,
+          isHomeBase: s.isHomeBase,
+          stayLabel: s.stayLabel,
+          latitude: s.latitude,
+          longitude: s.longitude,
+        }));
+        const legsJson = trip.legs.map((l) => ({
+          orderIndex: l.orderIndex,
+          transportType: l.transportType,
+          transportLabel: l.transportLabel,
+        }));
+
+        // Only the user-selected photos, with the highlight first so it becomes
+        // the post's cover photo (photosJson[0]).
+        const selectedSet = new Set(selection.selectedIds);
+        const chosen = publishMemories.filter((m) => selectedSet.has(m.id));
+        chosen.sort((a, b) => {
+          if (a.id === selection.highlightId) return -1;
+          if (b.id === selection.highlightId) return 1;
+          return 0;
+        });
+        const localPhotos = chosen.map((m) => ({
+          id: m.id,
+          imageUri: m.imageUri,
+          caption: m.caption,
+          cityName: m.cityName,
+        }));
+        const photosJson = await uploadTripPhotos(user.id, trip.id, localPhotos);
+
+        // Story cover from the selected photos (highlight first). Reuse the
+        // pre-rendered cover only when the full default set was kept.
+        let coverImageUrl: string | null = null;
+        if (localPhotos.length > 0) {
+          const keptAll = chosen.length === publishMemories.length;
+          const cached =
+            keptAll && preparedCoverRef.current?.signature === coverSignature
+              ? preparedCoverRef.current.base64
+              : null;
+          const base64 = cached ?? (await renderStoryCover(localPhotos.map((p) => p.imageUri)));
+          if (base64) {
+            coverImageUrl = await uploadStoryCover(user.id, trip.id, base64);
+          }
+        }
+
+        const supabaseId = await publishTrip({
+          localId: trip.id,
+          userId: user.id,
+          title: trip.title,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          stopsJson,
+          legsJson,
+          photosJson,
+          coverImageUrl,
+          isPublic: selection.isPublic,
+        });
+
+        const publishedAt = new Date().toISOString();
+        await repository.setTripPublishStatus(trip.id, supabaseId, selection.isPublic, publishedAt);
+        setTrip((prev) =>
+          prev ? { ...prev, supabaseId, isPublic: selection.isPublic, publishedAt } : null,
+        );
+
+        const visibilityLine = selection.isPublic
+          ? 'This trip is now public on your profile.'
+          : 'This trip is saved privately (link only).';
+        let photoLine = '';
+        if (chosen.length === 0) {
+          photoLine =
+            '\n\nNo photos were attached — add photo memories to your stops, then publish again to feature them on the post.';
+        } else if (photosJson.length === 0) {
+          photoLine =
+            '\n\nYour photos could not be uploaded (the originals may no longer be accessible on this device). Re-add them to the stops and try again.';
+        } else {
+          photoLine = `\n\n${photosJson.length} ${photosJson.length === 1 ? 'photo' : 'photos'} on the post${coverImageUrl ? ' · story cover created.' : '.'}`;
+        }
+        Alert.alert('Published', visibilityLine + photoLine);
+      } catch (err) {
+        Alert.alert('Could not publish', err instanceof Error ? err.message : 'Please try again.');
+      } finally {
+        setIsPublishing(false);
+      }
+    },
+    [trip, user, repository, coverSignature, renderStoryCover, publishMemories],
+  );
+
+  const handleUnpublishTrip = useCallback(() => {
+    if (!trip?.supabaseId || isPublishing) return;
+    Alert.alert('Remove from feed?', 'This will delete the published copy. Your local trip is unaffected.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () =>
+          void (async () => {
+            try {
+              setIsPublishing(true);
+              await unpublishTrip(trip.supabaseId!);
+              if (user) await deleteTripPhotos(user.id, trip.id);
+              await repository.setTripPublishStatus(trip.id, null, false, null);
+              setTrip((prev) =>
+                prev ? { ...prev, supabaseId: null, isPublic: false, publishedAt: null } : null,
+              );
+            } catch (err) {
+              Alert.alert('Could not remove', err instanceof Error ? err.message : 'Please try again.');
+            } finally {
+              setIsPublishing(false);
+            }
+          })(),
+      },
+    ]);
+  }, [trip, user, isPublishing, repository]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.centeredState}>
-          <ActivityIndicator color={TravelColors.primary} />
-          <Text style={styles.loadingText}>Loading trip…</Text>
-        </View>
+        <TripDetailSkeleton />
       </SafeAreaView>
     );
   }
@@ -178,6 +451,28 @@ export default function TripDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <Stack.Screen options={{ title: trip.title }} />
+      <PublishTripModal
+        visible={publishModalOpen}
+        memories={publishMemories}
+        alreadyPublished={Boolean(trip.supabaseId)}
+        busy={isPublishing}
+        onCancel={() => setPublishModalOpen(false)}
+        onConfirm={(selection) => void runPublish(selection)}
+      />
+      {coverHtml ? (
+        <View style={styles.hiddenRenderer} pointerEvents="none">
+          <WebView
+            source={{ html: coverHtml }}
+            onLoadEnd={() => coverWebViewRef.current?.injectJavaScript(COVER_TRIGGER_JS)}
+            ref={coverWebViewRef}
+            onMessage={handleCoverMessage}
+            style={styles.hiddenWebView}
+            javaScriptEnabled
+            originWhitelist={['*']}
+          />
+        </View>
+      ) : null}
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           <Text style={styles.eyebrow}>Saved itinerary</Text>
@@ -224,46 +519,71 @@ export default function TripDetailScreen() {
               </View>
             ) : null}
           </View>
-          <Pressable
-            style={styles.editButton}
-            disabled={isDeleting || isDuplicating}
-            onPress={() =>
-              router.push({
-                pathname: '/trips/[tripId]/edit',
-                params: { tripId: trip.id },
-              })
-            }>
-            <Ionicons name="create-outline" size={16} color={TravelColors.primary} />
-            <Text style={styles.editButtonText}>Edit trip</Text>
-          </Pressable>
-          <Pressable
-            style={styles.editButton}
-            disabled={isDeleting || isDuplicating}
-            onPress={() =>
-              router.push({
-                pathname: '/trips/[tripId]/story',
-                params: { tripId: trip.id },
-              })
-            }>
-            <Ionicons name="share-outline" size={16} color={TravelColors.primary} />
-            <Text style={styles.editButtonText}>Share trip story</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.duplicateButton, isDuplicating && styles.duplicateButtonDisabled]}
-            disabled={isDeleting || isDuplicating}
-            onPress={() => void handleDuplicateTrip()}>
-            <Ionicons name="copy-outline" size={16} color={TravelColors.primary} />
-            <Text style={styles.duplicateButtonText}>
-              {isDuplicating ? 'Duplicating…' : 'Duplicate trip'}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
-            disabled={isDeleting || isDuplicating}
-            onPress={handleDeleteTrip}>
-            <Ionicons name="trash-outline" size={16} color={TravelColors.danger} />
-            <Text style={styles.deleteButtonText}>{isDeleting ? 'Deleting…' : 'Delete trip'}</Text>
-          </Pressable>
+          <View style={styles.primaryActions}>
+            <Pressable
+              style={[styles.primaryActionButton, styles.primaryActionButtonFill]}
+              disabled={isDeleting || isDuplicating}
+              onPress={() =>
+                router.push({
+                  pathname: '/trips/[tripId]/story',
+                  params: { tripId: trip.id },
+                })
+              }>
+              <Ionicons name="share-outline" size={16} color="#ffffff" />
+              <Text style={styles.primaryActionButtonFillText}>Share story</Text>
+            </Pressable>
+            <Pressable
+              style={styles.primaryActionButton}
+              disabled={isDeleting || isDuplicating}
+              onPress={() =>
+                router.push({
+                  pathname: '/trips/[tripId]/edit',
+                  params: { tripId: trip.id },
+                })
+              }>
+              <Ionicons name="create-outline" size={16} color={TravelColors.primary} />
+              <Text style={styles.primaryActionButtonText}>Edit trip</Text>
+            </Pressable>
+          </View>
+          <View style={styles.secondaryActions}>
+            <Pressable
+              style={[styles.secondaryActionButton, (isDeleting || isDuplicating) && styles.secondaryActionButtonDisabled]}
+              disabled={isDeleting || isDuplicating}
+              onPress={() => void handleDuplicateTrip()}>
+              <Ionicons name="copy-outline" size={14} color={TravelColors.mutedText} />
+              <Text style={styles.secondaryActionButtonText}>
+                {isDuplicating ? 'Duplicating…' : 'Duplicate'}
+              </Text>
+            </Pressable>
+            {trip.supabaseId ? (
+              <Pressable
+                style={[styles.secondaryActionButton, styles.publishedActionButton, isPublishing && styles.secondaryActionButtonDisabled]}
+                disabled={isPublishing}
+                onPress={handleUnpublishTrip}>
+                <Ionicons name="cloud-done-outline" size={14} color="#2d7a47" />
+                <Text style={styles.publishedActionButtonText}>
+                  {isPublishing ? 'Updating…' : 'Published'}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[styles.secondaryActionButton, isPublishing && styles.secondaryActionButtonDisabled]}
+                disabled={isPublishing}
+                onPress={handlePublishTrip}>
+                <Ionicons name="cloud-upload-outline" size={14} color={TravelColors.primary} />
+                <Text style={[styles.secondaryActionButtonText, { color: TravelColors.primary }]}>
+                  {isPublishing ? 'Publishing…' : 'Publish'}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={[styles.secondaryActionButton, styles.deleteActionButton, (isDeleting || isDuplicating) && styles.secondaryActionButtonDisabled]}
+              disabled={isDeleting || isDuplicating}
+              onPress={handleDeleteTrip}>
+              <Ionicons name="trash-outline" size={14} color={TravelColors.danger} />
+              <Text style={styles.deleteActionButtonText}>{isDeleting ? 'Deleting…' : 'Delete'}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <TripMapWebView trip={trip} onRoutesLoaded={setLegRoutes} />
@@ -544,16 +864,14 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 18,
   },
+  hiddenRenderer: { position: 'absolute', left: -2000, top: -3000, width: 1080, height: 1920 },
+  hiddenWebView: { flex: 1 },
   centeredState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
     gap: 10,
-  },
-  loadingText: {
-    color: TravelColors.mutedText,
-    fontSize: 14,
   },
   emptyTitle: {
     color: TravelColors.text,
@@ -627,63 +945,78 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  editButton: {
+  primaryActions: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 4,
-    alignSelf: 'flex-start',
+  },
+  primaryActionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     borderRadius: 999,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     backgroundColor: TravelColors.tintSurface,
     borderWidth: 1,
     borderColor: TravelColors.borderStrong,
   },
-  editButtonText: {
+  primaryActionButtonFill: {
+    backgroundColor: TravelColors.primary,
+    borderColor: TravelColors.primary,
+  },
+  primaryActionButtonText: {
     color: TravelColors.primary,
     fontSize: 14,
     fontWeight: '700',
   },
-  duplicateButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: TravelColors.surface,
-    borderWidth: 1,
-    borderColor: TravelColors.borderStrong,
-  },
-  duplicateButtonDisabled: {
-    opacity: 0.6,
-  },
-  duplicateButtonText: {
-    color: TravelColors.primary,
+  primaryActionButtonFillText: {
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
   },
-  deleteButton: {
-    alignSelf: 'flex-start',
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     borderRadius: 999,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: TravelColors.surface,
     borderWidth: 1,
+    borderColor: TravelColors.border,
+  },
+  secondaryActionButtonDisabled: {
+    opacity: 0.5,
+  },
+  secondaryActionButtonText: {
+    color: TravelColors.mutedText,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  deleteActionButton: {
     borderColor: '#efcaca',
+    backgroundColor: '#fff9f9',
   },
-  deleteButtonDisabled: {
-    opacity: 0.6,
-  },
-  deleteButtonText: {
+  deleteActionButtonText: {
     color: TravelColors.danger,
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  publishedActionButton: {
+    borderColor: '#b7dfc2',
+    backgroundColor: '#e6f4ea',
+  },
+  publishedActionButtonText: {
+    color: '#2d7a47',
+    fontSize: 13,
+    fontWeight: '600',
   },
   sectionCard: {
     backgroundColor: TravelColors.surface,

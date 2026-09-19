@@ -1,12 +1,12 @@
 import React from 'react';
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { TravelColors } from '@/constants/theme';
+import { AuthProvider } from '@/features/auth/auth-context';
 import { migrateDbIfNeeded } from '@/lib/db/migrations';
 import { APP_DATABASE_NAME } from '@/lib/db/sqlite';
 
@@ -27,9 +27,7 @@ class AppShellErrorBoundary extends React.Component<
   React.PropsWithChildren,
   { error: Error | null }
 > {
-  state = {
-    error: null,
-  };
+  state = { error: null };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
@@ -51,7 +49,6 @@ class AppShellErrorBoundary extends React.Component<
         </View>
       );
     }
-
     return this.props.children;
   }
 }
@@ -59,32 +56,36 @@ class AppShellErrorBoundary extends React.Component<
 export default function RootLayout() {
   return (
     <ThemeProvider value={travelTheme}>
-      <AppShellErrorBoundary>
-        <SQLiteProvider databaseName={APP_DATABASE_NAME} onInit={migrateDbIfNeeded}>
-          <Stack
-            screenOptions={{
-              contentStyle: {
-                backgroundColor: '#f6fbff',
-              },
-              headerStyle: {
-                backgroundColor: '#ffffff',
-              },
-              headerTintColor: '#15304b',
-              headerTitleStyle: {
-                fontWeight: '700',
-              },
-            }}>
-            <Stack.Screen name="index" options={{ title: 'Trips' }} />
-            <Stack.Screen
-              name="trips/new"
-              options={{ title: 'Create trip', presentation: 'card' }}
-            />
-            <Stack.Screen name="trips/[tripId]/edit" options={{ title: 'Edit trip' }} />
-            <Stack.Screen name="trips/[tripId]" options={{ title: 'Trip detail' }} />
-            <Stack.Screen name="trips/[tripId]/story" options={{ title: 'Trip story' }} />
-          </Stack>
-        </SQLiteProvider>
-      </AppShellErrorBoundary>
+      <AuthProvider>
+        <AppShellErrorBoundary>
+          <SQLiteProvider databaseName={APP_DATABASE_NAME} onInit={migrateDbIfNeeded}>
+            <Stack
+              screenOptions={{
+                contentStyle: { backgroundColor: '#f6fbff' },
+                headerStyle: { backgroundColor: '#ffffff' },
+                headerTintColor: '#15304b',
+                headerTitleStyle: { fontWeight: '700' },
+              }}>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="trips/new"
+                options={{ title: 'Create trip', presentation: 'card' }}
+              />
+              <Stack.Screen name="trips/[tripId]/edit" options={{ title: 'Edit trip' }} />
+              <Stack.Screen name="trips/[tripId]" options={{ title: 'Trip detail' }} />
+              <Stack.Screen name="trips/[tripId]/story" options={{ title: 'Trip story' }} />
+              <Stack.Screen name="trips/shared/[publishedId]" options={{ title: 'Trip' }} />
+              <Stack.Screen name="profile/edit" options={{ title: 'Edit profile' }} />
+              <Stack.Screen name="profile/security" options={{ title: 'Security' }} />
+              <Stack.Screen name="users/[userId]" options={{ title: 'Profile' }} />
+              <Stack.Screen name="reset-password" options={{ headerShown: false }} />
+              <Stack.Screen name="mfa-challenge" options={{ headerShown: false }} />
+            </Stack>
+          </SQLiteProvider>
+        </AppShellErrorBoundary>
+      </AuthProvider>
       <StatusBar style="dark" />
     </ThemeProvider>
   );

@@ -29,8 +29,9 @@ export function computeTripStats(
   trip: TripDetail,
   legRoutes?: Record<string, LegRouteData>,
 ): TripStats {
-  const countries = new Set(trip.stops.map((s) => s.countryName.trim().toLowerCase()));
-  const cities = new Set(trip.stops.map((s) => `${s.cityName.trim().toLowerCase()}:${s.countryName.trim().toLowerCase()}`));
+  const travelStops = trip.stops.filter((s) => !s.isHomeBase);
+  const countries = new Set(travelStops.map((s) => s.countryName.trim().toLowerCase()));
+  const cities = new Set(travelStops.map((s) => `${s.cityName.trim().toLowerCase()}:${s.countryName.trim().toLowerCase()}`));
 
   let dayCount: number | null = null;
   if (trip.startDate && trip.endDate) {
@@ -64,7 +65,7 @@ export function computeTripStats(
 
 export function formatDistanceKm(km: number): string {
   if (km >= 1000) {
-    return `${(km / 1000).toFixed(1)}k km`;
+    return `${km.toLocaleString('en-US', { maximumFractionDigits: 0 })} km`;
   }
   return `${km} km`;
 }
@@ -73,8 +74,8 @@ export function formatLegDistance(distanceMeters: number | null): string | null 
   if (distanceMeters === null) return null;
   const km = distanceMeters / 1000;
   if (km < 1) return `${Math.round(distanceMeters)} m`;
-  if (km >= 1000) return `${(km / 1000).toFixed(1)}k km`;
-  return `${Math.round(km)} km`;
+  const rounded = Math.round(km);
+  return `${rounded.toLocaleString('en-US', { maximumFractionDigits: 0 })} km`;
 }
 
 export function formatLegDuration(durationSeconds: number | null): string | null {
