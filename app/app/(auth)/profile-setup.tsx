@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
@@ -18,7 +20,8 @@ import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 
 export default function ProfileSetupScreen() {
-  const { saveProfile, user } = useAuth();
+  const { saveProfile, signOut, user } = useAuth();
+  const router = useRouter();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -57,6 +60,19 @@ export default function ProfileSetupScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch {
+      // A failed network revoke must not trap the user here; the local session
+      // is what governs which screen shows.
+    }
+    // Navigate explicitly. The auth layout only redirects when a session
+    // exists, so once signed out nothing moves us off this route — we would
+    // sit on profile setup with no account.
+    router.replace('/(auth)/sign-in' as Href);
   };
 
   return (
@@ -135,6 +151,17 @@ export default function ProfileSetupScreen() {
                 <Text style={styles.primaryButtonText}>Save profile</Text>
               )}
             </Pressable>
+
+            {/* Without this the screen is a dead end: a signed-in account with
+                no profile is redirected here from the auth layout, so there is
+                no way back to sign-in to use a different account. */}
+            <Pressable
+              accessibilityRole="button"
+              onPress={handleSignOut}
+              disabled={loading}
+              style={({ pressed }) => [styles.secondaryLink, pressed && styles.secondaryLinkPressed]}>
+              <Text style={styles.secondaryLinkText}>Sign out</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -194,4 +221,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  secondaryLink: { alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 16 },
+  secondaryLinkPressed: { opacity: 0.6 },
+  secondaryLinkText: { color: TravelColors.secondaryText, fontSize: 14, fontWeight: '600' },
 });
