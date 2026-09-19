@@ -132,7 +132,7 @@ export default function UserProfileScreen() {
             <Image source={{ uri: profile.bannerUrl }} style={styles.banner} resizeMode="cover" />
           ) : null}
           <View style={styles.headerRow}>
-            <UserAvatar profile={profile} size={64} />
+            <UserAvatar profile={profile} size={64} expandable />
             <View style={styles.headerCopy}>
               <Text style={styles.displayName}>{profile.displayName}</Text>
               <Text style={styles.username}>@{profile.username}</Text>

@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -34,6 +34,23 @@ export default function ProfileScreen() {
   const [trips, setTrips] = useState<FeedTrip[]>([]);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [loading, setLoading] = useState(true);
+
+  // Tapping Trips parks the header off-screen and starts the published-trips
+  // list at the top. Measured with onLayout rather than a fixed offset, since
+  // the banner, bio and travel-stats card are all conditional.
+  const scrollRef = useRef<ScrollView>(null);
+  const tripsOffsetRef = useRef(0);
+  const scrollToTrips = () => {
+    scrollRef.current?.scrollTo({ y: Math.max(tripsOffsetRef.current - 8, 0), animated: true });
+  };
+
+  const openFollows = (tab: 'followers' | 'following') => {
+    if (!user) return;
+    router.push({
+      pathname: '/users/[userId]/follows',
+      params: { userId: user.id, tab },
+    } as unknown as Href);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -94,7 +111,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         <View style={styles.profileCard}>
           <View style={styles.banner}>
             {profile.bannerUrl ? (
@@ -120,7 +137,7 @@ export default function ProfileScreen() {
 
           <View style={styles.avatarWrap}>
             <View style={styles.avatarRing}>
-              <UserAvatar profile={profile} size={84} />
+              <UserAvatar profile={profile} size={84} expandable />
             </View>
           </View>
 
@@ -137,20 +154,32 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${trips.length} trips, jump to trips`}
+              onPress={scrollToTrips}
+              style={({ pressed }) => [styles.statItem, pressed && styles.statPressed]}>
               <Text style={styles.statValue}>{trips.length}</Text>
               <Text style={styles.statLabel}>Trips</Text>
-            </View>
+            </Pressable>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${followCounts.followers} followers, view list`}
+              onPress={() => openFollows('followers')}
+              style={({ pressed }) => [styles.statItem, pressed && styles.statPressed]}>
               <Text style={styles.statValue}>{followCounts.followers}</Text>
               <Text style={styles.statLabel}>Followers</Text>
-            </View>
+            </Pressable>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${followCounts.following} following, view list`}
+              onPress={() => openFollows('following')}
+              style={({ pressed }) => [styles.statItem, pressed && styles.statPressed]}>
               <Text style={styles.statValue}>{followCounts.following}</Text>
               <Text style={styles.statLabel}>Following</Text>
-            </View>
+            </Pressable>
           </View>
         </View>
 
@@ -174,7 +203,13 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
-        <Text style={styles.sectionTitle}>Published trips</Text>
+        <Text
+          style={styles.sectionTitle}
+          onLayout={(e) => {
+            tripsOffsetRef.current = e.nativeEvent.layout.y;
+          }}>
+          Published trips
+        </Text>
 
         {loading ? (
           <TripListSkeleton count={2} />
@@ -277,6 +312,7 @@ const styles = StyleSheet.create({
   },
   statItem: { alignItems: 'center', gap: 2, minWidth: 76 },
   statValue: { color: TravelColors.text, fontSize: 20, fontWeight: '800' },
+  statPressed: { opacity: 0.55 },
   statLabel: { color: TravelColors.mutedText, fontSize: 12, fontWeight: '600' },
   statDivider: { width: 1, height: 30, backgroundColor: TravelColors.border },
   travelStatsCard: {
