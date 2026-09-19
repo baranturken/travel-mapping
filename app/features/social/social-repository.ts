@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { listMyBlockedIds } from '@/features/social/moderation';
 import type { FeedTrip, LegSummary, Profile, StopSummary, TripComment, TripPhoto, UserProfile } from './types';
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ export async function getUserTrips(userId: string, viewerId: string | null): Pro
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
-export async function searchProfiles(query: string): Promise<Profile[]> {
+export async function searchProfiles(query: string, viewerId?: string | null): Promise<Profile[]> {
   // Strip characters that have special meaning in PostgREST or-filters / ILIKE patterns
   const sanitized = query.replace(/[,%_()]/g, '').trim();
   if (!sanitized) return [];
@@ -142,7 +143,15 @@ export async function searchProfiles(query: string): Promise<Profile[]> {
     .or(`username.ilike.%${sanitized}%,display_name.ilike.%${sanitized}%`)
     .limit(20);
   if (error) throw error;
-  return (data ?? []).map((r) => mapProfile(r as Record<string, unknown>));
+
+  const profiles = (data ?? []).map((r) => mapProfile(r as Record<string, unknown>));
+  if (!viewerId) return profiles;
+
+  // Trips and comments are filtered in RLS, but profile rows stay readable so
+  // the blocked-accounts screen can show who you blocked. Search is the one
+  // place that has to drop them itself.
+  const blocked = new Set(await listMyBlockedIds(viewerId));
+  return profiles.filter((p) => !blocked.has(p.id));
 }
 
 export async function getProfile(userId: string): Promise<Profile | null> {

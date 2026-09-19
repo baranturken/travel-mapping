@@ -23,6 +23,7 @@ import {
   getComments,
 } from '@/features/social/social-repository';
 import { UserAvatar } from './user-avatar';
+import { ReportSheet } from './report-sheet';
 import type { FeedTrip, TripComment } from '@/features/social/types';
 
 type Props = {
@@ -31,9 +32,12 @@ type Props = {
   onCountChange(delta: number): void;
 };
 
+type ReportTarget = { id: string; ownerId: string; label: string };
+
 export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [comments, setComments] = useState<TripComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [body, setBody] = useState('');
@@ -122,9 +126,25 @@ export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
                   </View>
                   {user?.id === item.userId ? (
                     <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete comment"
                       style={styles.deleteButton}
                       onPress={() => handleDelete(item)}>
                       <Ionicons name="trash-outline" size={15} color={TravelColors.danger} />
+                    </Pressable>
+                  ) : user ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Report comment"
+                      style={styles.deleteButton}
+                      onPress={() =>
+                        setReportTarget({
+                          id: item.id,
+                          ownerId: item.userId,
+                          label: `@${item.profile.username}`,
+                        })
+                      }>
+                      <Ionicons name="flag-outline" size={15} color={TravelColors.mutedText} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -158,6 +178,14 @@ export function CommentsSheet({ trip, onClose, onCountChange }: Props) {
           ) : null}
         </View>
       </KeyboardAvoidingView>
+      <ReportSheet
+        visible={reportTarget !== null}
+        onClose={() => setReportTarget(null)}
+        targetType="comment"
+        targetId={reportTarget?.id ?? ''}
+        targetOwnerId={reportTarget?.ownerId ?? null}
+        targetLabel={reportTarget?.label}
+      />
     </Modal>
   );
 }

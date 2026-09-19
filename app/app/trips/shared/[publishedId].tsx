@@ -22,6 +22,7 @@ import { summarizeStops } from '@/features/social/trip-summary-stats';
 import { CommentsSheet } from '@/features/social/components/comments-sheet';
 import { SharedTripMap } from '@/features/social/components/shared-trip-map';
 import { UserAvatar } from '@/features/social/components/user-avatar';
+import { ReportSheet } from '@/features/social/components/report-sheet';
 import type { FeedTrip } from '@/features/social/types';
 
 export default function SharedTripScreen() {
@@ -31,6 +32,7 @@ export default function SharedTripScreen() {
   const { width: windowWidth } = useWindowDimensions();
   // Two-column grid: screen minus 16px page padding each side and an 8px gutter.
   const galleryImageSize = Math.floor((windowWidth - 32 - 8) / 2);
+  const [reportOpen, setReportOpen] = useState(false);
   const [trip, setTrip] = useState<FeedTrip | null>(null);
   const [loading, setLoading] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -103,7 +105,30 @@ export default function SharedTripScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen options={{ title: trip.title }} />
+      <Stack.Screen
+        options={{
+          title: trip.title,
+          headerRight: () =>
+            user?.id !== trip.profile.id ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Report this trip"
+                hitSlop={10}
+                onPress={() => setReportOpen(true)}>
+                <Ionicons name="flag-outline" size={20} color={TravelColors.text} />
+              </Pressable>
+            ) : null,
+        }}
+      />
+
+      <ReportSheet
+        visible={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetType="trip"
+        targetId={trip.id}
+        targetOwnerId={trip.userId}
+        targetLabel={trip.title}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         <Pressable
           style={styles.authorCard}

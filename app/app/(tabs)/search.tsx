@@ -36,7 +36,7 @@ export default function SearchScreen() {
       }
       try {
         setLoading(true);
-        const profiles = await searchProfiles(q.trim());
+        const profiles = await searchProfiles(q.trim(), user?.id ?? null);
         const withFollowing = await Promise.all(
           profiles
             .filter((p) => p.id !== user.id)
