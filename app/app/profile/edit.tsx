@@ -310,6 +310,14 @@ export default function EditProfileScreen() {
             <Ionicons name="chevron-forward" size={16} color={TravelColors.mutedText} />
           </Pressable>
 
+          <Pressable
+            style={styles.securityLink}
+            onPress={() => router.push('/profile/blocked' as Href)}>
+            <Ionicons name="ban-outline" size={18} color={TravelColors.primary} />
+            <Text style={styles.securityLinkText}>Blocked accounts</Text>
+            <Ionicons name="chevron-forward" size={16} color={TravelColors.mutedText} />
+          </Pressable>
+
           <View style={styles.dangerZone}>
             <Text style={styles.dangerTitle}>Danger zone</Text>
             <Text style={styles.dangerBody}>

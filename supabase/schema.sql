@@ -232,3 +232,106 @@ CREATE POLICY "trips_update_own_or_editor" ON published_trips
   );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON trip_collaborators TO authenticated;
+
+-- ─── Moderation: blocks and reports ───────────────────────────────────────────
+-- Applied to the live project as migrations add_user_blocks_and_content_reports
+-- + filter_blocked_content_in_rls.
+--
+-- Required by App Store Review Guideline 1.2 for user-generated content: a way
+-- to report objectionable content, a way to block abusive users, filtering of
+-- that content, and a published contact that acts on reports within 24 hours.
+
+-- Blocking is mutual in effect: once A blocks B, neither sees the other's
+-- content. Only A can undo it, so the row records who did it.
+CREATE TABLE user_blocks (
+  blocker_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  blocked_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (blocker_id, blocked_id),
+  CONSTRAINT user_blocks_no_self CHECK (blocker_id <> blocked_id)
+);
+
+-- Both directions are read on every feed query.
+CREATE INDEX user_blocks_blocker_idx ON user_blocks(blocker_id);
+CREATE INDEX user_blocks_blocked_idx ON user_blocks(blocked_id);
+
+ALTER TABLE user_blocks ENABLE ROW LEVEL SECURITY;
+
+-- Deliberately NOT readable by the blocked party: letting someone enumerate who
+-- blocked them is itself a harassment vector.
+CREATE POLICY "blocks_select_own" ON user_blocks
+  FOR SELECT USING ((SELECT auth.uid()) = blocker_id);
+CREATE POLICY "blocks_insert_own" ON user_blocks
+  FOR INSERT WITH CHECK ((SELECT auth.uid()) = blocker_id);
+CREATE POLICY "blocks_delete_own" ON user_blocks
+  FOR DELETE USING ((SELECT auth.uid()) = blocker_id);
+
+GRANT SELECT, INSERT, DELETE ON user_blocks TO authenticated;
+
+-- Reports are write-only for users: file one, see your own, change nothing.
+CREATE TABLE content_reports (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  target_type     TEXT NOT NULL CHECK (target_type IN ('trip', 'comment', 'profile')),
+  -- Not a foreign key: the reported row may be deleted by its author or by
+  -- moderation, and the report must survive as a record of what happened.
+  target_id       UUID NOT NULL,
+  -- Denormalised so a report stays actionable after the target is gone.
+  target_owner_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  reason          TEXT NOT NULL CHECK (
+                    reason IN ('spam', 'harassment', 'hate', 'violence',
+                               'sexual', 'misinformation', 'other')),
+  details         TEXT CHECK (char_length(details) <= 1000),
+  status          TEXT NOT NULL DEFAULT 'open'
+                    CHECK (status IN ('open', 'reviewing', 'actioned', 'dismissed')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- One report per person per item; re-reporting the same thing adds nothing.
+  UNIQUE (reporter_id, target_type, target_id)
+);
+
+CREATE INDEX content_reports_status_idx   ON content_reports(status, created_at DESC);
+CREATE INDEX content_reports_target_idx   ON content_reports(target_type, target_id);
+CREATE INDEX content_reports_reporter_idx ON content_reports(reporter_id);
+
+ALTER TABLE content_reports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "reports_insert_own" ON content_reports
+  FOR INSERT WITH CHECK ((SELECT auth.uid()) = reporter_id);
+CREATE POLICY "reports_select_own" ON content_reports
+  FOR SELECT USING ((SELECT auth.uid()) = reporter_id);
+
+-- No UPDATE or DELETE policy: a filed report cannot be retracted or altered,
+-- and nobody can touch anyone else's. Moderation happens out of band.
+GRANT SELECT, INSERT ON content_reports TO authenticated;
+
+-- Hide blocked users' content at the database rather than in the client, so the
+-- app never needs to know who blocked it.
+CREATE OR REPLACE FUNCTION private.is_hidden_user(p_other_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM user_blocks b
+    WHERE (b.blocker_id = auth.uid() AND b.blocked_id = p_other_id)
+       OR (b.blocked_id = auth.uid() AND b.blocker_id = p_other_id)
+  );
+$$;
+
+REVOKE ALL ON FUNCTION private.is_hidden_user(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION private.is_hidden_user(UUID) TO authenticated;
+
+-- Replaces the trips_select policy defined earlier in this file.
+DROP POLICY IF EXISTS "trips_select" ON published_trips;
+CREATE POLICY "trips_select" ON published_trips
+  FOR SELECT USING (
+    ((is_public = true) OR ((SELECT auth.uid()) = user_id))
+    AND NOT private.is_hidden_user(user_id)
+  );
+
+-- Replaces the comments_select_all policy defined earlier in this file.
+DROP POLICY IF EXISTS "comments_select_all" ON trip_comments;
+CREATE POLICY "comments_select_all" ON trip_comments
+  FOR SELECT USING (NOT private.is_hidden_user(user_id));
+
+-- Profiles are deliberately NOT filtered here: the blocked-accounts screen has
+-- to join profiles to show who you blocked. Search filters them client-side
+-- using the viewer's own blocks, which RLS already exposes.

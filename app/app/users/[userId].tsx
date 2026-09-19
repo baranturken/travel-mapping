@@ -25,15 +25,26 @@ import {
 import { UserAvatar } from '@/features/social/components/user-avatar';
 import { FeedTripCard } from '@/features/social/components/feed-trip-card';
 import type { FeedTrip, UserProfile } from '@/features/social/types';
+import { cacheKey, invalidateCache, readCache, writeCache } from '@/features/social/social-cache';
+import { ReportSheet } from '@/features/social/components/report-sheet';
+import { blockUser, isBlockedByMe, unblockUser } from '@/features/social/moderation';
 
 export default function UserProfileScreen() {
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { user } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [trips, setTrips] = useState<FeedTrip[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from cache so a revisit paints immediately. The focus effect still
+  // refetches underneath; this only removes the blank skeleton in between.
+  const profileKey = cacheKey('profile', userId ?? '');
+  const tripsKey = cacheKey('userTrips', userId ?? '');
+  const [profile, setProfile] = useState<UserProfile | null>(
+    () => readCache<UserProfile>(profileKey),
+  );
+  const [trips, setTrips] = useState<FeedTrip[]>(() => readCache<FeedTrip[]>(tripsKey) ?? []);
+  const [loading, setLoading] = useState(() => readCache<UserProfile>(profileKey) === null);
   const [followLoading, setFollowLoading] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [blocked, setBlocked] = useState(false);
 
   // Tapping the Trips stat should park the header off-screen and start the
   // list at the top, rather than jumping to an arbitrary offset. Declared here,
@@ -55,37 +66,101 @@ export default function UserProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!userId || !user) return;
-      // Skeletons only before first paint; a re-focus refresh swaps the content
-      // in place rather than blanking the screen.
-      if (!hasLoadedRef.current) setLoading(true);
+      // Skeletons only when there is genuinely nothing to show — no cache and
+      // no previous load. Otherwise the content stays put and is replaced once
+      // the fresh copy lands.
+      if (!hasLoadedRef.current && readCache<UserProfile>(profileKey) === null) setLoading(true);
       void Promise.all([
         getUserProfile(userId, user.id),
         getUserTrips(userId, user.id),
+        isBlockedByMe(user.id, userId),
       ])
-        .then(([p, t]) => {
+        .then(([p, t, isBlocked]) => {
           setProfile(p);
           setTrips(t);
+          setBlocked(isBlocked);
+          if (p) writeCache(profileKey, p);
+          writeCache(tripsKey, t);
         })
         .finally(() => {
           hasLoadedRef.current = true;
           setLoading(false);
         });
-    }, [userId, user]),
+    }, [userId, user, profileKey, tripsKey]),
   );
+
+  const handleToggleBlock = () => {
+    if (!user || !profile) return;
+
+    if (blocked) {
+      void (async () => {
+        try {
+          await unblockUser(user.id, profile.id);
+          setBlocked(false);
+          invalidateCache('');
+        } catch (err) {
+          Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
+        }
+      })();
+      return;
+    }
+
+    Alert.alert(
+      `Block @${profile.username}?`,
+      'You will not see their trips or comments, and they will not see yours. They are not told. You can undo this any time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await blockUser(user.id, profile.id);
+                setBlocked(true);
+                // Their content is now hidden everywhere, so every cached feed
+                // and profile is out of date.
+                invalidateCache('');
+                router.back();
+              } catch (err) {
+                Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const openModerationMenu = () => {
+    if (!profile) return;
+    Alert.alert(`@${profile.username}`, undefined, [
+      { text: 'Report account', onPress: () => setReportOpen(true) },
+      {
+        text: blocked ? 'Unblock account' : 'Block account',
+        style: blocked ? 'default' : 'destructive',
+        onPress: handleToggleBlock,
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const handleToggleFollow = async () => {
     if (!user || !profile || followLoading) return;
     const wasFollowing = profile.isFollowedByMe;
     setFollowLoading(true);
-    setProfile((p) =>
-      p
-        ? {
-            ...p,
-            isFollowedByMe: !wasFollowing,
-            followersCount: p.followersCount + (wasFollowing ? -1 : 1),
-          }
-        : null,
-    );
+    setProfile((p) => {
+      if (!p) return null;
+      const next = {
+        ...p,
+        isFollowedByMe: !wasFollowing,
+        followersCount: p.followersCount + (wasFollowing ? -1 : 1),
+      };
+      // Otherwise leaving and returning would show the pre-toggle state from
+      // cache until the refetch lands.
+      writeCache(profileKey, next);
+      return next;
+    });
     try {
       if (wasFollowing) {
         await unfollowUser(user.id, profile.id);
@@ -93,15 +168,16 @@ export default function UserProfileScreen() {
         await followUser(user.id, profile.id);
       }
     } catch (err) {
-      setProfile((p) =>
-        p
-          ? {
-              ...p,
-              isFollowedByMe: wasFollowing,
-              followersCount: p.followersCount + (wasFollowing ? 1 : -1),
-            }
-          : null,
-      );
+      setProfile((p) => {
+        if (!p) return null;
+        const reverted = {
+          ...p,
+          isFollowedByMe: wasFollowing,
+          followersCount: p.followersCount + (wasFollowing ? 1 : -1),
+        };
+        writeCache(profileKey, reverted);
+        return reverted;
+      });
       Alert.alert('Error', err instanceof Error ? err.message : 'Please try again.');
     } finally {
       setFollowLoading(false);
@@ -131,7 +207,30 @@ export default function UserProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen options={{ title: `@${profile.username}` }} />
+      <Stack.Screen
+        options={{
+          title: `@${profile.username}`,
+          headerRight: () =>
+            user?.id !== profile.id ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Report or block this account"
+                hitSlop={10}
+                onPress={openModerationMenu}>
+                <Ionicons name="ellipsis-horizontal" size={22} color={TravelColors.text} />
+              </Pressable>
+            ) : null,
+        }}
+      />
+
+      <ReportSheet
+        visible={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetType="profile"
+        targetId={profile.id}
+        targetOwnerId={profile.id}
+        targetLabel={`@${profile.username}`}
+      />
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           {profile.bannerUrl ? (

@@ -23,6 +23,7 @@ const TAB_BACK_TITLES: Record<string, string> = {
 };
 
 const ROUTE_BACK_TITLES: Record<string, string> = {
+  'profile/security': 'Security',
   'trips/[tripId]': 'Trip',
   'trips/shared/[publishedId]': 'Trip',
   'users/[userId]': 'Profile',
@@ -127,6 +128,7 @@ export default function RootLayout() {
               <Stack.Screen name="trips/shared/[publishedId]" options={{ title: 'Trip' }} />
               <Stack.Screen name="profile/edit" options={{ title: 'Edit profile' }} />
               <Stack.Screen name="profile/security" options={{ title: 'Security' }} />
+              <Stack.Screen name="profile/blocked" options={{ title: 'Blocked accounts' }} />
               <Stack.Screen name="users/[userId]" options={{ title: 'Profile' }} />
               <Stack.Screen name="reset-password" options={{ headerShown: false }} />
               <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
