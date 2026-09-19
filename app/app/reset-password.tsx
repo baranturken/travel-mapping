@@ -18,22 +18,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TravelColors } from '@/constants/theme';
+import { extractAuthParams } from '@/features/auth/auth-deep-link';
 import { PasswordRequirements } from '@/features/auth/components/password-requirements';
-import { evaluatePassword } from '@/features/auth/password-policy';
+import { evaluatePassword, MIN_PASSWORD_LENGTH } from '@/features/auth/password-policy';
 import { supabase } from '@/lib/supabase';
-
-// Pull key=value pairs out of a URL hash fragment
-// (travelmapping://reset-password#access_token=...&refresh_token=...).
-function parseFragment(url: string): Record<string, string> {
-  const hashIndex = url.indexOf('#');
-  if (hashIndex === -1) return {};
-  const params: Record<string, string> = {};
-  for (const pair of url.slice(hashIndex + 1).split('&')) {
-    const eq = pair.indexOf('=');
-    if (eq > 0) params[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
-  }
-  return params;
-}
 
 type LinkState = 'checking' | 'ready' | 'invalid';
 
@@ -63,18 +51,13 @@ export default function ResetPasswordScreen() {
       }
       if (!url) return; // wait for the URL to arrive
 
-      const fragment = parseFragment(url);
-      const { queryParams } = Linking.parse(url);
-      const code = typeof queryParams?.code === 'string' ? queryParams.code : null;
-      const errorDescription =
-        fragment.error_description ??
-        (typeof queryParams?.error_description === 'string' ? queryParams.error_description : null);
+      const { accessToken, refreshToken, code, errorDescription } = extractAuthParams(url);
 
       try {
-        if (fragment.access_token && fragment.refresh_token) {
+        if (accessToken && refreshToken) {
           const { error } = await supabase.auth.setSession({
-            access_token: fragment.access_token,
-            refresh_token: fragment.refresh_token,
+            access_token: accessToken,
+            refresh_token: refreshToken,
           });
           if (error) throw error;
           if (!cancelled) setLinkState('ready');
@@ -169,7 +152,7 @@ export default function ResetPasswordScreen() {
                     style={styles.input}
                     value={password}
                     onChangeText={setPassword}
-                    placeholder="At least 8 characters"
+                    placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                     placeholderTextColor={TravelColors.mutedText}
                     secureTextEntry
                     editable={!saving}

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@/features/social/types';
 import {
@@ -124,7 +125,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+    // Point the confirmation email at our own callback route rather than
+    // relying on the project's Site URL. The route exchanges the token and
+    // routes the user onward; without it the link lands on whatever Site URL
+    // happens to be configured.
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: Linking.createURL('auth-callback') },
+    });
     if (error) throw error;
   };
 

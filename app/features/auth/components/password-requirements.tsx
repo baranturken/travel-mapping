@@ -2,7 +2,11 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { TravelColors } from '@/constants/theme';
-import type { PasswordResult, PasswordStrength } from '@/features/auth/password-policy';
+import {
+  MIN_PASSWORD_LENGTH,
+  type PasswordResult,
+  type PasswordStrength,
+} from '@/features/auth/password-policy';
 
 const STRENGTH_COLOR: Record<PasswordStrength, string> = {
   weak: '#b53c3c',
@@ -54,9 +58,11 @@ export function PasswordRequirements({ result }: { result: PasswordResult }) {
           {STRENGTH_TEXT[result.strength]}
         </Text>
       </View>
-      <Rule ok={result.checks.minLength} label="At least 8 characters" />
-      <Rule ok={result.checks.hasLetter} label="Contains a letter" />
+      <Rule ok={result.checks.minLength} label={`At least ${MIN_PASSWORD_LENGTH} characters`} />
+      <Rule ok={result.checks.hasLower} label="Contains a lowercase letter" />
+      <Rule ok={result.checks.hasUpper} label="Contains an uppercase letter" />
       <Rule ok={result.checks.hasNumber} label="Contains a number" />
+      <Rule ok={result.checks.hasSymbol} label="Contains a symbol (! ? # …)" />
       <Rule ok={result.checks.notCommon} label="Not a common password" />
     </View>
   );
