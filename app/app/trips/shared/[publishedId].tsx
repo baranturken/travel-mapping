@@ -182,7 +182,9 @@ export default function SharedTripScreen() {
           </View>
         ) : null}
 
-        {trip.stopsJson.length > 0 ? <SharedTripMap stops={trip.stopsJson} /> : null}
+        {trip.stopsJson.length > 0 ? (
+          <SharedTripMap stops={trip.stopsJson} title={trip.title} />
+        ) : null}
 
         <View style={styles.routeCard}>
           <Text style={styles.sectionTitle}>Route</Text>
