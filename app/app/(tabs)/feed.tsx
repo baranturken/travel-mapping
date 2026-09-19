@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -30,6 +30,11 @@ export default function FeedScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRecommended, setIsRecommended] = useState(false);
+  // Skeletons mean "nothing here yet". On a re-focus refresh there IS content,
+  // so blanking it out to re-draw placeholders makes the feed flicker away and
+  // back. Track whether we have ever loaded, and fall back to the pull-to-
+  // refresh spinner once we have.
+  const hasLoadedRef = useRef(false);
 
   const loadFeed = useCallback(async (offset = 0, append = false) => {
     if (!user) return;
@@ -59,8 +64,16 @@ export default function FeedScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (hasLoadedRef.current) {
+        setRefreshing(true);
+        void loadFeed(0, false).finally(() => setRefreshing(false));
+        return;
+      }
       setLoading(true);
-      void loadFeed(0, false).finally(() => setLoading(false));
+      void loadFeed(0, false).finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
     }, [loadFeed]),
   );
 

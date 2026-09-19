@@ -1,6 +1,7 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -34,10 +35,29 @@ export default function UserProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
 
+  // Tapping the Trips stat should park the header off-screen and start the
+  // list at the top, rather than jumping to an arbitrary offset. Declared here,
+  // above the early returns, so hook order stays stable across renders.
+  const hasLoadedRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const tripsOffsetRef = useRef(0);
+  const scrollToTrips = () => {
+    scrollRef.current?.scrollTo({ y: Math.max(tripsOffsetRef.current - 8, 0), animated: true });
+  };
+
+  const openFollows = (tab: 'followers' | 'following') =>
+    router.push({
+      pathname: '/users/[userId]/follows',
+      params: { userId: userId as string, tab },
+    } as unknown as Href);
+
+
   useFocusEffect(
     useCallback(() => {
       if (!userId || !user) return;
-      setLoading(true);
+      // Skeletons only before first paint; a re-focus refresh swaps the content
+      // in place rather than blanking the screen.
+      if (!hasLoadedRef.current) setLoading(true);
       void Promise.all([
         getUserProfile(userId, user.id),
         getUserTrips(userId, user.id),
@@ -46,7 +66,10 @@ export default function UserProfileScreen() {
           setProfile(p);
           setTrips(t);
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          hasLoadedRef.current = true;
+          setLoading(false);
+        });
     }, [userId, user]),
   );
 
@@ -109,13 +132,13 @@ export default function UserProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <Stack.Screen options={{ title: `@${profile.username}` }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           {profile.bannerUrl ? (
             <Image source={{ uri: profile.bannerUrl }} style={styles.banner} resizeMode="cover" />
           ) : null}
           <View style={styles.headerRow}>
-            <UserAvatar profile={profile} size={64} />
+            <UserAvatar profile={profile} size={64} expandable />
             <View style={styles.headerCopy}>
               <Text style={styles.displayName}>{profile.displayName}</Text>
               <Text style={styles.username}>@{profile.username}</Text>
@@ -139,24 +162,40 @@ export default function UserProfileScreen() {
           {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${profile.tripsCount} trips, jump to trips`}
+              onPress={scrollToTrips}
+              style={({ pressed }) => [styles.statItem, pressed && styles.statPressed]}>
               <Text style={styles.statValue}>{profile.tripsCount}</Text>
               <Text style={styles.statLabel}>Trips</Text>
-            </View>
+            </Pressable>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${profile.followersCount} followers, view list`}
+              onPress={() => openFollows('followers')}
+              style={({ pressed }) => [styles.statItem, pressed && styles.statPressed]}>
               <Text style={styles.statValue}>{profile.followersCount}</Text>
               <Text style={styles.statLabel}>Followers</Text>
-            </View>
+            </Pressable>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${profile.followingCount} following, view list`}
+              onPress={() => openFollows('following')}
+              style={({ pressed }) => [styles.statItem, pressed && styles.statPressed]}>
               <Text style={styles.statValue}>{profile.followingCount}</Text>
               <Text style={styles.statLabel}>Following</Text>
-            </View>
+            </Pressable>
           </View>
         </View>
 
-        {trips.length === 0 ? (
+        <View
+          onLayout={(e) => {
+            tripsOffsetRef.current = e.nativeEvent.layout.y;
+          }}>
+          {trips.length === 0 ? (
           <View style={styles.emptyTrips}>
             <Ionicons name="map-outline" size={28} color={TravelColors.mutedText} />
             <Text style={styles.emptyTripsText}>No public trips yet.</Text>
@@ -177,7 +216,8 @@ export default function UserProfileScreen() {
               />
             ))}
           </View>
-        )}
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -231,6 +271,7 @@ const styles = StyleSheet.create({
   },
   statItem: { alignItems: 'center', gap: 2 },
   statValue: { color: TravelColors.text, fontSize: 20, fontWeight: '800' },
+  statPressed: { opacity: 0.55 },
   statLabel: { color: TravelColors.mutedText, fontSize: 12, fontWeight: '600' },
   statDivider: { width: 1, height: 28, backgroundColor: TravelColors.border },
   emptyTrips: {

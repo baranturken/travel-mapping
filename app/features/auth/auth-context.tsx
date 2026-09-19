@@ -148,7 +148,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // The default scope revokes the refresh token server-side, so a network
+      // failure would otherwise leave the local session intact and the user
+      // still signed in. Dropping the local session is the part that must
+      // always happen.
+      await supabase.auth.signOut({ scope: 'local' });
+    }
     setProfile(null);
   };
 
