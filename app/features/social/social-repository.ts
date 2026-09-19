@@ -184,6 +184,66 @@ export async function getUserProfile(userId: string, viewerId: string | null): P
   };
 }
 
+/** A profile in a follower/following list, with the viewer's own follow state. */
+export type FollowListEntry = Profile & { isFollowedByMe: boolean };
+
+async function listFollowProfiles(
+  ids: string[],
+  viewerId: string | null,
+): Promise<FollowListEntry[]> {
+  if (ids.length === 0) return [];
+
+  const { data } = await supabase.from('profiles').select('*').in('id', ids);
+  const profiles = (data ?? []).map((row) => mapProfile(row as Record<string, unknown>));
+
+  // Which of these the viewer already follows, so the list can show the right
+  // button state without a query per row.
+  let followedIds = new Set<string>();
+  if (viewerId) {
+    const { data: rows } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', viewerId)
+      .in('following_id', ids);
+    followedIds = new Set((rows ?? []).map((r) => r.following_id as string));
+  }
+
+  // Preserve the order the follow rows came back in (most recent first).
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((p): p is Profile => p !== undefined)
+    .map((p) => ({ ...p, isFollowedByMe: followedIds.has(p.id) }));
+}
+
+/** Accounts that follow `userId`. */
+export async function listFollowers(
+  userId: string,
+  viewerId: string | null,
+): Promise<FollowListEntry[]> {
+  const { data } = await supabase
+    .from('follows')
+    .select('follower_id')
+    .eq('following_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  return listFollowProfiles((data ?? []).map((r) => r.follower_id as string), viewerId);
+}
+
+/** Accounts `userId` follows. */
+export async function listFollowing(
+  userId: string,
+  viewerId: string | null,
+): Promise<FollowListEntry[]> {
+  const { data } = await supabase
+    .from('follows')
+    .select('following_id')
+    .eq('follower_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  return listFollowProfiles((data ?? []).map((r) => r.following_id as string), viewerId);
+}
+
 export async function getFollowCounts(userId: string): Promise<{ followers: number; following: number }> {
   const [{ count: followers }, { count: following }] = await Promise.all([
     supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
