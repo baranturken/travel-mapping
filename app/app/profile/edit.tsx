@@ -356,8 +356,8 @@ const styles = StyleSheet.create({
     borderColor: TravelColors.border,
     justifyContent: 'flex-end',
   },
-  bannerImage: StyleSheet.absoluteFillObject,
-  bannerPlaceholder: { ...StyleSheet.absoluteFillObject, backgroundColor: TravelColors.primary, opacity: 0.18 },
+  bannerImage: StyleSheet.absoluteFill,
+  bannerPlaceholder: { ...StyleSheet.absoluteFill, backgroundColor: TravelColors.primary, opacity: 0.18 },
   bannerOverlay: {
     flexDirection: 'row',
     alignItems: 'center',

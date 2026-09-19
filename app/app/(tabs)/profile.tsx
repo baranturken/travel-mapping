@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
   },
-  bannerImage: StyleSheet.absoluteFillObject,
+  bannerImage: StyleSheet.absoluteFill,
   bannerIconButton: {
     width: 34,
     height: 34,
