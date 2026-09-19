@@ -81,6 +81,7 @@ export default function RootLayout() {
               <Stack.Screen name="profile/security" options={{ title: 'Security' }} />
               <Stack.Screen name="users/[userId]" options={{ title: 'Profile' }} />
               <Stack.Screen name="reset-password" options={{ headerShown: false }} />
+              <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
               <Stack.Screen name="mfa-challenge" options={{ headerShown: false }} />
             </Stack>
           </SQLiteProvider>

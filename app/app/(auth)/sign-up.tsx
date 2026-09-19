@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TravelColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { PasswordRequirements } from '@/features/auth/components/password-requirements';
-import { evaluatePassword } from '@/features/auth/password-policy';
+import { evaluatePassword, MIN_PASSWORD_LENGTH } from '@/features/auth/password-policy';
 import { supabase } from '@/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -148,7 +148,7 @@ export default function SignUpScreen() {
                   style={styles.input}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="At least 8 characters"
+                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                   placeholderTextColor={TravelColors.mutedText}
                   secureTextEntry
                   editable={!loading}
