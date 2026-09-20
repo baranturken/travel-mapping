@@ -56,7 +56,20 @@ export default function SignUpScreen() {
     try {
       setLoading(true);
       const captchaToken = await requestToken();
-      await signUp(email.trim(), password, captchaToken);
+      const needsConfirmation = await signUp(email.trim(), password, captchaToken);
+
+      // Without this the screen simply sits there: sign-up succeeded but no
+      // session exists until the emailed link is opened, so nothing visibly
+      // happens and the user assumes it failed.
+      if (needsConfirmation) {
+        Alert.alert(
+          'Confirm your email',
+          `We sent a confirmation link to ${email.trim()}. Open it on this device to finish setting up your account.
+
+Not in your inbox? Check your spam or junk folder, and mark it as "not spam" so future emails arrive properly.`,
+          [{ text: 'OK', onPress: () => router.replace('/(auth)/sign-in' as Href) }],
+        );
+      }
     } catch (err) {
       Alert.alert('Sign-up failed', err instanceof Error ? err.message : 'Please try again.');
     } finally {

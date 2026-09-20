@@ -78,6 +78,15 @@ export default function ForgotPasswordScreen() {
                   If an account exists for {email.trim()}, we sent a link to reset your password.
                   Open it on this device to continue.
                 </Text>
+                {/* Reset mail lands in spam often enough that not saying so
+                    just turns into "the email never arrived". */}
+                <View style={styles.spamNote}>
+                  <Ionicons name="alert-circle-outline" size={16} color={TravelColors.primary} />
+                  <Text style={styles.spamNoteText}>
+                    Not in your inbox? Check your spam or junk folder — and mark it as “not spam”
+                    so future emails arrive properly.
+                  </Text>
+                </View>
                 <Pressable style={styles.primaryButton} onPress={() => router.back()}>
                   <Text style={styles.primaryButtonText}>Back to sign in</Text>
                 </Pressable>
@@ -146,6 +155,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: TravelColors.border,
     gap: 16,
+  },
+  spamNote: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+    backgroundColor: TravelColors.tintSurface,
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 4,
+  },
+  spamNoteText: {
+    flex: 1,
+    color: TravelColors.secondaryText,
+    fontSize: 13,
+    lineHeight: 19,
   },
   sentIconWrap: {
     width: 60,

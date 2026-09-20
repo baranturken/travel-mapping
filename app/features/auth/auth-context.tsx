@@ -28,7 +28,12 @@ type AuthContextValue = {
   // context stays usable when Turnstile is not configured; Supabase only
   // requires it once captcha protection is enabled on the project.
   signIn(email: string, password: string, captchaToken?: string | null): Promise<void>;
-  signUp(email: string, password: string, captchaToken?: string | null): Promise<void>;
+  /**
+   * Resolves true when the account needs an emailed confirmation before it can
+   * be used — i.e. no session was created. The caller has to tell the user to
+   * go and check their mail, including spam.
+   */
+  signUp(email: string, password: string, captchaToken?: string | null): Promise<boolean>;
   signOut(): Promise<void>;
   saveProfile(data: {
     username: string;
@@ -137,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // relying on the project's Site URL. The route exchanges the token and
     // routes the user onward; without it the link lands on whatever Site URL
     // happens to be configured.
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -146,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     if (error) throw error;
+    return data.session === null;
   };
 
   const signOut = async () => {
